@@ -115,10 +115,26 @@ Set these variables on the service:
 | Variable | |
 | --- | --- |
 | `SECRET_KEY` | required — the fallback is a known dev value, so sessions are forgeable without it |
-| `DATABASE_URL` | Postgres URL. **Without it the app writes SQLite into the container filesystem, which is wiped on every deploy** — levels and users disappear. Attach a Postgres service (or a volume mounted at `instance/`). |
+| `DATABASE_URL` | Postgres URL. Not needed if you attach a **volume** — see below. |
 | `ADMIN_USERNAME` + `ADMIN_PASSWORD` | creates the first admin on boot, see below |
 | `OPENAI_API_KEY` | optional; the AI buttons degrade gracefully without it |
 | `OPENAI_MODEL` | optional, defaults to `gpt-4o-mini` |
+
+### Where the data lives
+
+The container filesystem is rebuilt on every deploy, so a SQLite file that
+isn't on a volume loses every level and user each time you push. Two ways out:
+
+- **Attach a volume.** No config needed, whatever mount path you pick: with no
+  `DATABASE_URL` set, the app puts `wordtree.db` inside
+  `RAILWAY_VOLUME_MOUNT_PATH`. SQLite runs in WAL mode with a 15s busy timeout
+  so the two gunicorn workers don't trip over each other.
+- **Attach Postgres** and set `DATABASE_URL` — it always wins over the volume.
+
+Startup logs which one you got: `Database: sqlite at … (on the volume,
+persists)`, `Database: postgresql://***@…`, or a loud warning that the file
+will be wiped. If you ever see permission errors writing to the volume, set
+`RAILWAY_RUN_UID=0` on the service.
 
 ### The first admin
 

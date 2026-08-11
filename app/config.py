@@ -6,17 +6,31 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 def _database_url():
     url = os.environ.get("DATABASE_URL", "").strip()
-    # Heroku/Railway-style URLs use the legacy scheme SQLAlchemy 2 rejects
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return url or f"sqlite:///{BASE_DIR / 'instance' / 'wordtree.db'}"
+    if url:
+        # Heroku/Railway-style URLs use the legacy scheme SQLAlchemy 2 rejects
+        return url.replace("postgres://", "postgresql://", 1) if url.startswith("postgres://") else url
+
+    # No explicit URL. If a Railway volume is attached, keep SQLite on it —
+    # anywhere else on a container host the file dies with the next deploy.
+    volume = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if volume:
+        return f"sqlite:///{Path(volume) / 'wordtree.db'}"
+    return f"sqlite:///{BASE_DIR / 'instance' / 'wordtree.db'}"
+
+
+def _engine_options(uri):
+    # hosted Postgres drops idle connections — check one before handing it out
+    options = {"pool_pre_ping": True}
+    if uri.startswith("sqlite"):
+        # concurrent writers wait for the lock instead of failing immediately
+        options["connect_args"] = {"timeout": 15}
+    return options
 
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
     SQLALCHEMY_DATABASE_URI = _database_url()
-    # hosted Postgres drops idle connections — check one before handing it out
-    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
+    SQLALCHEMY_ENGINE_OPTIONS = _engine_options(SQLALCHEMY_DATABASE_URI)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
