@@ -16,6 +16,12 @@ role checks.
 
 ## Conventions
 
+- The tree canvas is the editor. The old Structure row list is still in
+  `designer.js` (`buildRow`) but its panel is hidden (`.editor.hiddenel` in
+  `templates/editor/index.html`) — `#rows` stays in the DOM so it keeps
+  rendering. Both editors drive the same action helpers (`addChild`,
+  `toggleHidden`, `deleteNode`, `moveNode`, `suggestChildren`, `regenerate`);
+  put new node actions there, not in one UI.
 - `app/static/js/designer.js` is the ported prototype (tree editing + preview).
   Keep changes there minimal and behaviour-compatible; it talks to the shell
   only through `window.Designer`. All server/library logic lives in `app.js`.

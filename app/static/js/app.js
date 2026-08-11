@@ -378,9 +378,9 @@ Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
 
 /* ============================ collapsible panes ============================ */
 
+// the structure pane is disabled — the tree itself is the editor now
 const PANES = {
   levels: { pane: "pane-levels", rail: "rail-levels", btn: "btn-collapse-levels", label: "levels" },
-  structure: { pane: "pane-structure", rail: "rail-structure", btn: "btn-collapse-structure", label: "structure" },
 };
 
 function setPane(key, collapsed) {
@@ -505,10 +505,9 @@ document.addEventListener("keydown", e => {
     neighbour(e.key === "ArrowUp" ? -1 : 1);
     return;
   }
-  if (e.altKey && (e.code === "Digit1" || e.code === "Digit2")) {
+  if (e.altKey && e.code === "Digit1") {
     e.preventDefault();
-    const key = e.code === "Digit1" ? "levels" : "structure";
-    setPane(key, !$(PANES[key].pane).classList.contains("collapsed"));
+    setPane("levels", !$(PANES.levels.pane).classList.contains("collapsed"));
     return;
   }
   if (e.key === "/" && !typing) { e.preventDefault(); $("level-search").focus(); }

@@ -93,8 +93,7 @@ body{
   padding:14px 18px 10px;
 }
 .panel-head h2{font-family:'Baloo 2';font-size:15px;letter-spacing:.02em;color:var(--ink)}
-.editor .panel-head{justify-content:flex-start}
-.editor .stats{margin-left:auto}
+
 .stats{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--ink-soft)}
 .dot{width:3px;height:3px;border-radius:50%;background:var(--ink-soft)}
 
@@ -198,6 +197,36 @@ body.dragging, body.dragging .node.draggable{cursor:grabbing}
   box-shadow:0 3px 0 #ddd2f5;
 }
 .node.dup{border:2px solid var(--danger);color:var(--danger)}
+.node.sel{box-shadow:0 0 0 2.5px var(--purple), 0 3px 0 #d8d4e2}
+.node.busy{opacity:.55}
+.node-input{
+  width:100%;height:100%;border:none;background:none;padding:0 8px;
+  font:inherit;font-family:'Baloo 2';font-weight:700;font-size:14px;letter-spacing:.02em;
+  text-align:center;text-transform:uppercase;color:var(--ink);
+}
+.node-input:focus{outline:none}
+
+/* ---------- on-canvas node toolbar ---------- */
+.node-tools{
+  position:absolute;z-index:6;display:flex;align-items:center;gap:3px;
+  padding:4px;border-radius:11px;white-space:nowrap;
+  background:var(--paper);border:1px solid var(--line);
+  box-shadow:0 8px 20px rgba(63,58,77,.18);
+  transform-origin:bottom center;
+}
+.node-tools .tool{
+  width:24px;height:24px;border-radius:7px;border:1px solid var(--line);
+  background:var(--paper);color:var(--ink-soft);cursor:pointer;font:inherit;font-size:12px;line-height:1;
+}
+.node-tools .tool:hover:not(:disabled){border-color:var(--purple);color:var(--purple)}
+.node-tools .tool.ai:hover:not(:disabled),
+.node-tools .tool.re:hover:not(:disabled){border-color:var(--gold);color:#b07d10}
+.node-tools .tool.danger:hover:not(:disabled){border-color:var(--danger);color:var(--danger)}
+.node-tools .tool:disabled{opacity:.3;cursor:default}
+.node-tools .pill{margin-right:2px}
+.tree-hint{padding:0 18px 14px;font-size:12px;color:var(--ink-soft);line-height:1.9}
+.tree-hint .pill{cursor:default;vertical-align:middle}
+.preview .stats{margin:0 auto 0 12px}
 .node-blank{
   background:var(--slot);
   box-shadow:inset 0 2px 3px rgba(0,0,0,.12);

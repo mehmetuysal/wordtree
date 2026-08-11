@@ -15,6 +15,9 @@ let playerView = false;
 let zoom = 0.85;
 const collapsedSet = new Set();
 
+let selectedId = null;   // node whose toolbar is open on the canvas
+let editingId = null;    // node currently being renamed inline
+
 let onChange = () => {};          // set by app.js — fires on any tree/meta edit
 let onSuggest = null;             // set by app.js — async (node, path) => string[]
 let onRegenerate = null;          // set by app.js — async (node, opts) => {word, children}
@@ -131,6 +134,61 @@ const el = (tag, cls, text) => {
   return e;
 };
 
+/* ============================ node actions ============================
+   Shared by the (currently hidden) row editor and the on-canvas toolbar, so
+   both stay in sync. Each one leaves re-rendering to the caller's renderAll. */
+
+function addChild(node) {
+  const child = N("", true);
+  node.children.push(child);
+  collapsedSet.delete(node.id);
+  onChange();
+  return child;
+}
+
+function toggleHidden(node) {
+  node.hidden = !node.hidden;
+  onChange();
+}
+
+function deleteNode(node) {
+  const parent = findParent(tree, node.id);
+  if (!parent) return false;
+  parent.children = parent.children.filter(c => c.id !== node.id);
+  if (selectedId === node.id) selectedId = parent.id;
+  onChange();
+  return true;
+}
+
+function moveNode(node, dir) {
+  const parent = findParent(tree, node.id);
+  if (!parent) return;
+  const i = parent.children.indexOf(node);
+  const j = i + dir;
+  if (j < 0 || j >= parent.children.length) return;
+  [parent.children[i], parent.children[j]] = [parent.children[j], parent.children[i]];
+  onChange();
+}
+
+function siblingIndex(node) {
+  const parent = findParent(tree, node.id);
+  return parent ? [parent.children.indexOf(node), parent.children.length] : [0, 1];
+}
+
+async function suggestChildren(node, btn) {
+  if (!onSuggest) return;
+  const label = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    const words = await onSuggest(node, pathTo(tree, node.id) || [], collectWords(tree));
+    (words || []).forEach(w => node.children.push(N(w, true)));
+    if (words && words.length) { collapsedSet.delete(node.id); onChange(); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    renderAll();
+  }
+}
+
 function renderEditor() {
   const rows = $("rows");
   rows.innerHTML = "";
@@ -168,7 +226,7 @@ function buildRow(container, node, depthIdx, parentId, index, siblings) {
   pill.title = node.hidden
     ? "Hidden — player must place this word"
     : "Revealed — shown when the level starts";
-  pill.onclick = () => { node.hidden = !node.hidden; renderAll(); onChange(); };
+  pill.onclick = () => { toggleHidden(node); renderAll(); };
   row.appendChild(pill);
 
   const btns = el("div", "row-btns");
@@ -176,27 +234,11 @@ function buildRow(container, node, depthIdx, parentId, index, siblings) {
 
   const bAdd = el("button", "ic", "+");
   bAdd.title = "Add child";
-  bAdd.onclick = () => {
-    node.children.push(N("", true));
-    collapsedSet.delete(node.id);
-    renderAll();
-    onChange();
-  };
+  bAdd.onclick = () => { addChild(node); renderAll(); };
 
   const bAi = el("button", "ic ai", "✨");
   bAi.title = "Suggest child words with AI";
-  bAi.onclick = async () => {
-    if (!onSuggest) return;
-    bAi.disabled = true;
-    bAi.textContent = "…";
-    try {
-      const words = await onSuggest(node, pathTo(tree, node.id) || [], collectWords(tree));
-      (words || []).forEach(w => node.children.push(N(w, true)));
-      if (words && words.length) { collapsedSet.delete(node.id); onChange(); }
-    } finally {
-      renderAll();
-    }
-  };
+  bAi.onclick = () => suggestChildren(node, bAi);
 
   const bRe = el("button", "ic re", "↻");
   const named = !!(node.word || "").trim();
@@ -211,20 +253,17 @@ function buildRow(container, node, depthIdx, parentId, index, siblings) {
   const bUp = el("button", "ic", "↑");
   bUp.title = "Move up";
   bUp.disabled = isRoot || index === 0;
-  bUp.onclick = () => { swap(parentId, index, -1); };
+  bUp.onclick = () => { moveNode(node, -1); renderAll(); };
 
   const bDown = el("button", "ic", "↓");
   bDown.title = "Move down";
   bDown.disabled = isRoot || index === siblings - 1;
-  bDown.onclick = () => { swap(parentId, index, +1); };
+  bDown.onclick = () => { moveNode(node, +1); renderAll(); };
 
   const bDel = el("button", "ic danger", "✕");
   bDel.title = isRoot ? "Root can't be deleted" : "Delete (with branch)";
   bDel.disabled = isRoot;
-  bDel.onclick = () => {
-    const p = findParent(tree, node.id);
-    if (p) { p.children = p.children.filter(c => c.id !== node.id); renderAll(); onChange(); }
-  };
+  bDel.onclick = () => { if (deleteNode(node)) renderAll(); };
 
   btns.append(bAdd, bAi, bRe, bUp, bDown, bDel);
   row.appendChild(btns);
@@ -263,15 +302,6 @@ async function regenerate(node, { keepWord = false, btn = null } = {}) {
 $("btn-regen-tree").onclick = () =>
   regenerate(tree, { keepWord: !!(tree.word || "").trim(), btn: $("btn-regen-tree") });
 
-function swap(parentId, index, dir) {
-  const p = findNode(tree, parentId);
-  const j = index + dir;
-  if (!p || j < 0 || j >= p.children.length) return;
-  [p.children[index], p.children[j]] = [p.children[j], p.children[index]];
-  renderAll();
-  onChange();
-}
-
 function renderStats() {
   const hidden = collectHidden(tree);
   $("stats").innerHTML = "";
@@ -298,6 +328,97 @@ function renderStats() {
   $("warn").textContent = msgs.join(" ");
 }
 
+/* ---------- on-canvas node editing ---------- */
+
+/** Turn the node box itself into a text field. */
+function renameInPlace(box, node, pos) {
+  const before = node.word || "";
+  const input = el("input", "node-input");
+  input.value = before;
+  input.placeholder = "word…";
+  box.textContent = "";
+  box.appendChild(input);
+
+  let done = false;
+  const finish = keep => {
+    if (done) return;
+    done = true;
+    editingId = null;
+    const next = keep ? input.value.trim().toUpperCase() : before;
+    if (next !== before) { node.word = next; onChange(); renderAll(); }
+    else renderPreview();
+  };
+
+  input.addEventListener("pointerdown", e => e.stopPropagation());   // don't start a drag
+  input.addEventListener("dblclick", e => e.stopPropagation());
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("keydown", e => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("input", () => {       // grow the box with the word
+    const w = nodeWidth(input.value);
+    box.style.width = w + "px";
+    box.style.left = (pos.x - w / 2) + "px";
+  });
+  setTimeout(() => { input.focus(); input.select(); }, 0);
+}
+
+/** The floating action bar that hovers above the selected node. */
+function nodeToolbar(node, pos) {
+  const bar = el("div", "node-tools");
+  bar.style.cssText =
+    "left:" + pos.x + "px;top:" + (pos.y - 10) + "px;" +
+    "transform:translate(-50%,-100%) scale(" + (1 / zoom).toFixed(3) + ");";
+  bar.addEventListener("pointerdown", e => e.stopPropagation());
+
+  const isRoot = !findParent(tree, node.id);
+  const [index, count] = siblingIndex(node);
+  const named = !!(node.word || "").trim();
+
+  const add = (label, title, cls, fn, disabled = false) => {
+    const b = el("button", cls || "", label);
+    b.title = title;
+    b.disabled = disabled;
+    b.onclick = e => { e.stopPropagation(); fn(b); };
+    bar.appendChild(b);
+    return b;
+  };
+
+  const pill = add(node.hidden ? "hidden" : "shown",
+    node.hidden ? "Hidden — the player must place this word"
+                : "Shown — revealed when the level starts",
+    "pill " + (node.hidden ? "pill-hidden" : "pill-shown"),
+    () => { toggleHidden(node); renderAll(); });
+  pill.classList.remove("tool");
+
+  add("✎", "Rename", "tool", () => { editingId = node.id; renderPreview(); });
+  add("+", "Add a child", "tool", () => {
+    const child = addChild(node);
+    selectedId = child.id;
+    editingId = child.id;
+    renderAll();
+  });
+  add("✨", "Suggest child words with AI", "tool ai", b => suggestChildren(node, b));
+  add("↻", !named ? "Fill this word in with AI"
+        : node.children.length ? "Regenerate this word and its whole branch with AI"
+                               : "Regenerate this word with AI",
+    "tool re", b => regenerate(node, { keepWord: isRoot && named, btn: b }));
+  add("↑", "Move left among its siblings", "tool", () => { moveNode(node, -1); renderAll(); },
+    isRoot || index === 0);
+  add("↓", "Move right among its siblings", "tool", () => { moveNode(node, +1); renderAll(); },
+    isRoot || index >= count - 1);
+  if (node.ox || node.oy) {
+    add("⌖", "Snap back to the automatic position", "tool",
+      () => { node.ox = 0; node.oy = 0; renderPreview(); onChange(); });
+  }
+  add("✕", isRoot ? "The root can't be deleted" : "Delete this word and its branch",
+    "tool danger", () => { if (deleteNode(node)) renderAll(); }, isRoot);
+
+  return bar;
+}
+
 function renderPreview() {
   const positions = [];
   layout(tree, 0, { x: 0 }, positions);
@@ -320,7 +441,8 @@ function renderPreview() {
     maxX = Math.max(maxX, p.x + p.w / 2);
     maxY = Math.max(maxY, p.y + NODE_H);
   });
-  const shiftX = 16 - minX, shiftY = 12 - minY;
+  // in designer mode leave room above the root for its toolbar
+  const shiftX = 16 - minX, shiftY = (playerView ? 12 : 52) - minY;
   positions.forEach(p => { p.x += shiftX; p.y += shiftY; });
   const W = maxX + shiftX + 16, H = maxY + shiftY + 16;
 
@@ -365,23 +487,42 @@ function renderPreview() {
 
   const dupes = duplicateWords(tree);
   positions.forEach(p => {
-    const blank = playerView && p.node.hidden;
-    const cls = blank ? "node-blank" : (p.node.hidden ? "node-hidden" : "node-shown");
-    const dup = !playerView && dupes.has((p.node.word || "").trim().toUpperCase()) ? " dup" : "";
-    const d = el("div", "node " + cls + dup + (playerView ? "" : " draggable"), blank ? "" : (p.node.word || "…"));
+    const node = p.node;
+    const blank = playerView && node.hidden;
+    const cls = blank ? "node-blank" : (node.hidden ? "node-hidden" : "node-shown");
+    const dup = !playerView && dupes.has((node.word || "").trim().toUpperCase()) ? " dup" : "";
+    const sel = !playerView && node.id === selectedId ? " sel" : "";
+    const busy = regenerating.has(node.id) ? " busy" : "";
+    const d = el("div", "node " + cls + dup + sel + busy + (playerView ? "" : " draggable"),
+      blank ? "" : (node.word || "…"));
     d.style.cssText =
       "left:" + (p.x - p.w / 2) + "px;top:" + p.y + "px;" +
       "width:" + p.w + "px;height:" + NODE_H + "px;";
+
     if (!playerView) {
-      d.addEventListener("pointerdown", e => startDrag(e, p.node));
-      d.addEventListener("dblclick", () => {
-        p.node.ox = 0; p.node.oy = 0;
-        renderPreview();
-        onChange();
-      });
-      d.title = dup
-        ? "This word is used more than once — the player can't tell where it goes"
-        : "Drag to move this branch · double-click to snap back";
+      if (node.id === editingId) {
+        renameInPlace(d, node, p);
+      } else {
+        d.addEventListener("pointerdown", e => startDrag(e, node));
+        d.addEventListener("dblclick", e => {
+          e.preventDefault();
+          if (e.altKey) {           // the old plain-double-click behaviour
+            node.ox = 0; node.oy = 0;
+            renderPreview();
+            onChange();
+          } else {
+            editingId = node.id;
+            selectedId = node.id;
+            renderPreview();
+          }
+        });
+        d.title = dup
+          ? "This word is used more than once — the player can't tell where it goes"
+          : "Double-click to rename · drag to move the branch · Alt+double-click to snap back";
+      }
+      if (node.id === selectedId && node.id !== editingId) {
+        inner.appendChild(nodeToolbar(node, p));
+      }
     }
     inner.appendChild(d);
   });
@@ -426,10 +567,31 @@ window.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => {
   if (!drag) return;
-  const moved = drag.moved;
+  const { moved, node } = drag;
   drag = null;
   document.body.classList.remove("dragging");
-  if (moved) onChange();
+  if (moved) { onChange(); return; }
+  selectedId = node.id;      // a click that didn't move is a selection
+  editingId = null;
+  renderPreview();
+});
+
+// clicking the empty canvas clears the selection
+$("canvas").addEventListener("pointerdown", e => {
+  if (e.target.closest(".node, .node-tools")) return;
+  if (selectedId === null) return;
+  selectedId = null;
+  editingId = null;
+  renderPreview();
+});
+
+document.addEventListener("keydown", e => {
+  if (selectedId === null || editingId !== null || playerView) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  const node = findNode(tree, selectedId);
+  if (!node) return;
+  if (e.key === "Enter") { e.preventDefault(); editingId = node.id; renderPreview(); }
+  if (e.key === "Escape") { selectedId = null; renderPreview(); }
 });
 
 function clearOffsets(n) {
@@ -479,6 +641,7 @@ window.Designer = {
   setTree(data) {
     tree = addIds(data && typeof data.word !== "undefined" ? data : { word: "", hidden: false });
     collapsedSet.clear();
+    selectedId = editingId = null;
     renderAll();
   },
   /** The tree in its persisted shape. */

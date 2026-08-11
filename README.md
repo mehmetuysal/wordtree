@@ -37,10 +37,22 @@ app/
   templates/
 ```
 
+## Editing the tree
+
+Everything happens on the tree itself — the old Structure row list is disabled.
+
+- **Click** a word to select it; a toolbar appears above it with hidden/shown,
+  rename, add child, ✨ AI children, ↻ regenerate, reorder and delete.
+- **Double-click** a word to rename it in place (`Enter` saves, `Esc` cancels).
+- **Drag** a word to move it with its whole branch, **Alt+double-click** to snap
+  it back. `↻ Tree` in the header rebuilds every word under the root.
+
 ## Keyboard
 
 - `⌘S` / `Ctrl+S` — save
 - `Alt+↑` / `Alt+↓` — previous / next level
+- `Enter` — rename the selected word, `Esc` — deselect
+- `Alt+1` — collapse / expand the level list
 - `/` — focus the level search
 - `Esc` — close any modal
 

@@ -73,28 +73,18 @@
     </div>
   </aside>
 
-  <!-- ------------------------------ structure ------------------------------ -->
-  <section class="editor" id="pane-structure">
-    <button class="rail" id="rail-structure" title="Show structure (⌥2)" aria-label="Show structure"><span>Structure</span></button>
-    <div class="panel-head">
-      <h2>Structure</h2>
-      <div class="stats" id="stats"></div>
-      <button class="collapse-btn" id="btn-regen-tree" title="Regenerate every word below the root with AI" aria-label="Regenerate tree">↻</button>
-      <button class="collapse-btn" id="btn-collapse-structure" title="Hide structure (⌥2)" aria-label="Hide structure">‹</button>
-    </div>
+  <!-- ---------------- structure — disabled, the tree is the editor now ----------------
+       Kept in the DOM (hidden) so the row editor keeps working behind the scenes and
+       can be switched back on by dropping the `hiddenel` class. -->
+  <section class="editor hiddenel" id="pane-structure">
     <div class="rows" id="rows"></div>
-    <div class="warn" id="warn"></div>
-    <div class="legend">
-      <span class="pill pill-hidden">hidden</span> goes to the word bank — the player must place it.
-      <span class="pill pill-shown">shown</span> is revealed when the level starts.<br>
-      In the preview you can <b>drag any word to move it together with its whole branch</b>; double-click a word to snap it back to the automatic position.
-    </div>
   </section>
 
   <!-- ------------------------------ preview ------------------------------ -->
   <section class="preview">
     <div class="panel-head">
-      <h2>Preview</h2>
+      <h2>Tree</h2>
+      <div class="stats" id="stats"></div>
       <div class="preview-tools">
         <div class="seg">
           <button id="seg-designer" class="on">Designer</button>
@@ -103,8 +93,10 @@
         <input id="zoom" type="range" min="0.3" max="1.2" step="0.05" value="0.85" aria-label="Zoom">
         <button class="btn ghost-btn fit-btn" id="btn-fit">Fit</button>
         <button class="btn ghost-btn fit-btn" id="btn-reset-layout" title="Clear all manual positions">Reset layout</button>
+        <button class="btn ghost-btn fit-btn" id="btn-regen-tree" title="Regenerate every word below the root with AI">↻ Tree</button>
       </div>
     </div>
+    <div class="warn" id="warn"></div>
 
     <div class="phone">
       <div class="hud">
@@ -115,6 +107,13 @@
       <div class="progress" id="progress">0/0</div>
       <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
       <div class="bank hiddenel" id="bank"></div>
+    </div>
+
+    <div class="tree-hint">
+      <b>Click</b> a word to select it and get its toolbar · <b>double-click</b> to rename ·
+      <b>drag</b> to move it with its whole branch · <b>Alt+double-click</b> to snap it back.
+      <span class="pill pill-hidden">hidden</span> goes to the word bank for the player to place,
+      <span class="pill pill-shown">shown</span> is revealed at the start.
     </div>
   </section>
 </div>
