@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Word Tree — Level Designer{% endblock %}
+{% block body_class %}designer-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/designer.css') }}">
+{% endblock %}
+
+{% block layout %}
+<header class="topbar">
+  <div class="brand"><span class="brand-tile">▤</span><span>Word Tree <em>Level Designer</em></span></div>
+
+  <div class="meta">
+    <label>Level<input id="in-level" type="number" min="1" value="1"></label>
+    <label>Name<input id="in-name" class="wide" type="text" placeholder="Vehicles"></label>
+    <label>Moves<input id="in-moves" type="number" min="1" value="30"></label>
+    <label>Coins<input id="in-coins" type="number" min="0" value="100"></label>
+    <label>Status
+      <select id="in-status">
+        <option value="draft">draft</option>
+        <option value="published">published</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="top-actions">
+    <span class="saving-badge" id="save-state"></span>
+    <button class="btn ghost-btn" id="btn-ai" title="Generate a tree with AI">✨ AI</button>
+    <button class="btn ghost-btn" id="btn-export">Export</button>
+    <button class="btn ghost-btn" id="btn-import">Import</button>
+    <button class="btn primary" id="btn-save" title="⌘S / Ctrl+S">Save</button>
+    <div class="relative">
+      <button class="btn ghost-btn" id="btn-menu" aria-haspopup="true" aria-expanded="false">⋯</button>
+      <div id="menu" class="hiddenel absolute right-0 mt-2 w-52 bg-paper border border-line rounded-xl shadow-xl py-1.5 z-30 text-sm font-bold">
+        <button class="w-full text-left px-4 py-2 hover:bg-field" id="mi-duplicate">Duplicate level</button>
+        <button class="w-full text-left px-4 py-2 hover:bg-field text-danger" id="mi-delete">Delete level</button>
+        <div class="h-px bg-line my-1.5"></div>
+        {% if current_user.is_admin %}
+        <a class="block px-4 py-2 hover:bg-field" href="{{ url_for('admin.users') }}">Manage users</a>
+        {% endif %}
+        <div class="px-4 py-2 text-ink-soft font-medium text-xs">Signed in as {{ current_user.username }}</div>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="w-full text-left px-4 py-2 hover:bg-field">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="body">
+  <!-- ------------------------------ level list ------------------------------ -->
+  <aside class="sidebar" id="pane-levels">
+    <button class="rail" id="rail-levels" title="Show levels (⌥1)" aria-label="Show levels"><span>Levels</span></button>
+    <div class="sidebar-head">
+      <div class="flex items-center justify-between">
+        <h2 class="font-display text-[15px]">Levels</h2>
+        <div class="flex items-center gap-1.5">
+          <button class="btn primary text-[12px] px-3 py-1.5 rounded-lg" id="btn-new">+ New</button>
+          <button class="collapse-btn" id="btn-collapse-levels" title="Hide levels (⌥1)" aria-label="Hide levels">‹</button>
+        </div>
+      </div>
+      <input class="sidebar-search" id="level-search" type="search" placeholder="Search levels…  ( / )">
+    </div>
+
+    <div class="level-list" id="level-list"></div>
+
+    <div class="sidebar-foot">
+      <label class="flex items-center gap-1.5 cursor-pointer">
+        <input type="checkbox" id="sel-all" class="accent-purple"> <span id="sel-count">select</span>
+      </label>
+      <button class="link-btn ml-auto" id="btn-export-selected">Export ▾</button>
+    </div>
+  </aside>
+
+  <!-- ------------------------------ structure ------------------------------ -->
+  <section class="editor" id="pane-structure">
+    <button class="rail" id="rail-structure" title="Show structure (⌥2)" aria-label="Show structure"><span>Structure</span></button>
+    <div class="panel-head">
+      <h2>Structure</h2>
+      <div class="stats" id="stats"></div>
+      <button class="collapse-btn" id="btn-regen-tree" title="Regenerate every word below the root with AI" aria-label="Regenerate tree">↻</button>
+      <button class="collapse-btn" id="btn-collapse-structure" title="Hide structure (⌥2)" aria-label="Hide structure">‹</button>
+    </div>
+    <div class="rows" id="rows"></div>
+    <div class="warn" id="warn"></div>
+    <div class="legend">
+      <span class="pill pill-hidden">hidden</span> goes to the word bank — the player must place it.
+      <span class="pill pill-shown">shown</span> is revealed when the level starts.<br>
+      In the preview you can <b>drag any word to move it together with its whole branch</b>; double-click a word to snap it back to the automatic position.
+    </div>
+  </section>
+
+  <!-- ------------------------------ preview ------------------------------ -->
+  <section class="preview">
+    <div class="panel-head">
+      <h2>Preview</h2>
+      <div class="preview-tools">
+        <div class="seg">
+          <button id="seg-designer" class="on">Designer</button>
+          <button id="seg-player">Player</button>
+        </div>
+        <input id="zoom" type="range" min="0.3" max="1.2" step="0.05" value="0.85" aria-label="Zoom">
+        <button class="btn ghost-btn fit-btn" id="btn-fit">Fit</button>
+        <button class="btn ghost-btn fit-btn" id="btn-reset-layout" title="Clear all manual positions">Reset layout</button>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="hud">
+        <span class="coin"><i>★</i> <span id="hud-coins">100</span></span>
+        <span class="lvl" id="hud-level">Level 1</span>
+        <span class="movebox">Moves <b id="hud-moves">30</b></span>
+      </div>
+      <div class="progress" id="progress">0/0</div>
+      <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
+      <div class="bank hiddenel" id="bank"></div>
+    </div>
+  </section>
+</div>
+
+<!-- ------------------------------ export modal ------------------------------ -->
+<div class="overlay hiddenel" id="ov-export">
+  <div class="modal">
+    <h3 id="export-title">Export</h3>
+    <div class="field-row">
+      <label class="grow">Scope
+        <select id="export-scope">
+          <option value="current">Current level</option>
+          <option value="selected">Selected levels</option>
+          <option value="all">All levels</option>
+        </select>
+      </label>
+    </div>
+    <textarea id="export-text" readonly></textarea>
+    <div class="modal-btns">
+      <button class="btn ghost-btn" id="btn-export-close">Close</button>
+      <button class="btn ghost-btn" id="btn-copy">Copy</button>
+      <button class="btn primary" id="btn-download">Download .json</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------ import modal ------------------------------ -->
+<div class="overlay hiddenel" id="ov-import">
+  <div class="modal">
+    <h3>Import levels</h3>
+    <div class="field-row">
+      <button class="btn ghost-btn" id="btn-pick-file">Choose file…</button>
+      <input id="file-input" type="file" accept=".json,application/json" multiple class="hiddenel">
+      <label class="grow">On level number clash
+        <select id="import-mode">
+          <option value="skip">Skip existing</option>
+          <option value="overwrite">Overwrite existing</option>
+          <option value="renumber">Import as new levels</option>
+        </select>
+      </label>
+    </div>
+    <textarea id="import-text" placeholder='One level: {"level":1,"moves":30,"tree":{…}}&#10;Many:      {"levels":[{…},{…}]}'></textarea>
+    <div class="warn" id="import-err"></div>
+    <div class="modal-btns">
+      <button class="btn ghost-btn" id="btn-import-cancel">Cancel</button>
+      <button class="btn ghost-btn" id="btn-import-editor">Load into editor</button>
+      <button class="btn primary" id="btn-import-save">Import to library</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------ AI modal ------------------------------ -->
+<div class="overlay hiddenel" id="ov-ai">
+  <div class="modal" style="width:min(440px,92vw)">
+    <h3>Generate a tree</h3>
+    <div class="field-row">
+      <label class="grow">Topic
+        <input id="ai-topic" placeholder="Vehicles" autocomplete="off">
+      </label>
+    </div>
+    <div class="field-row">
+      <label>Children per node
+        <input id="ai-breadth" type="number" min="2" max="6" value="3">
+      </label>
+      <label>Depth
+        <input id="ai-depth" type="number" min="2" max="5" value="3">
+      </label>
+      <label>Hidden from depth
+        <input id="ai-hide" type="number" min="0" max="5" value="1">
+      </label>
+    </div>
+    <div class="warn" id="ai-err"></div>
+    <div class="modal-btns">
+      <button class="btn ghost-btn" id="btn-ai-cancel">Cancel</button>
+      <button class="btn primary" id="btn-ai-run">Generate</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/designer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

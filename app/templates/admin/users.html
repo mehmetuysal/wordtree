@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Users — Word Tree{% endblock %}
+
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+{% block layout %}
+<header class="flex items-center gap-5 px-5 py-3 bg-paper border-b border-line">
+  <a href="{{ url_for('editor.index') }}" class="flex items-center gap-2.5 font-display font-extrabold text-lg">
+    <span class="w-8 h-8 rounded-[9px] grid place-items-center text-white text-[15px]
+                 bg-gradient-to-b from-purple to-purple-deep shadow-[0_3px_0_#5a37b5]">▤</span>
+    Word Tree <em class="not-italic text-purple">Users</em>
+  </a>
+  <div class="ml-auto flex items-center gap-3">
+    <a href="{{ url_for('editor.index') }}" class="text-sm font-bold text-ink-soft hover:text-purple">← Back to editor</a>
+    <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}
+      <button class="text-sm font-bold text-ink-soft hover:text-danger">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto p-6 flex flex-col gap-6">
+  <section class="bg-paper rounded-2xl border border-line p-5">
+    <h2 class="font-display text-[15px] mb-3">Add user</h2>
+    <form method="post" action="{{ url_for('admin.create_user') }}" class="flex flex-wrap items-end gap-3">
+      {{ csrf() }}
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Username</span>
+        <input name="username" required class="px-3 py-2 rounded-lg border border-line bg-field font-bold w-44 focus:outline-none focus:border-purple">
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Email</span>
+        <input name="email" type="email" class="px-3 py-2 rounded-lg border border-line bg-field w-56 focus:outline-none focus:border-purple">
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Password</span>
+        <input name="password" type="password" required class="px-3 py-2 rounded-lg border border-line bg-field w-44 focus:outline-none focus:border-purple">
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Role</span>
+        <select name="role" class="px-3 py-2 rounded-lg border border-line bg-field font-bold focus:outline-none focus:border-purple">
+          {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="rounded-[10px] bg-purple text-white font-bold px-4 py-2.5 shadow-[0_3px_0_#6f45d8] active:translate-y-0.5">Create</button>
+    </form>
+  </section>
+
+  <section class="bg-paper rounded-2xl border border-line overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-field text-[11px] uppercase tracking-wide text-ink-soft">
+        <tr>
+          <th class="text-left px-5 py-3">User</th>
+          <th class="text-left px-5 py-3">Role</th>
+          <th class="text-left px-5 py-3">Status</th>
+          <th class="text-right px-5 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr class="border-t border-line">
+          <td class="px-5 py-3">
+            <div class="font-bold">{{ u.username }}{% if u.id == current_user.id %}
+              <span class="ml-1 text-[10px] font-bold uppercase text-purple">you</span>{% endif %}</div>
+            <div class="text-ink-soft text-xs">{{ u.email or '—' }}</div>
+          </td>
+          <td class="px-5 py-3">
+            <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="flex gap-2">
+              {{ csrf() }}<input type="hidden" name="action" value="role">
+              <select name="role" onchange="this.form.submit()"
+                      class="px-2 py-1.5 rounded-lg border border-line bg-field font-bold">
+                {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ r }}</option>{% endfor %}
+              </select>
+            </form>
+          </td>
+          <td class="px-5 py-3">
+            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold
+              {{ 'bg-emerald-50 text-emerald-700' if u.active else 'bg-red-50 text-danger' }}">
+              {{ 'active' if u.active else 'disabled' }}</span>
+          </td>
+          <td class="px-5 py-3">
+            <div class="flex items-center justify-end gap-2">
+              <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="flex gap-1">
+                {{ csrf() }}<input type="hidden" name="action" value="password">
+                <input name="password" type="password" placeholder="new password"
+                       class="px-2 py-1.5 rounded-lg border border-line bg-field w-36 focus:outline-none focus:border-purple">
+                <button class="px-3 py-1.5 rounded-lg border border-line font-bold hover:border-purple hover:text-purple">Set</button>
+              </form>
+              <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}">
+                {{ csrf() }}<input type="hidden" name="action" value="toggle">
+                <button class="px-3 py-1.5 rounded-lg border border-line font-bold hover:border-purple hover:text-purple"
+                  {{ 'disabled' if u.id == current_user.id }}>{{ 'Disable' if u.active else 'Enable' }}</button>
+              </form>
+              <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}"
+                    onsubmit="return confirm('Delete {{ u.username }}?')">
+                {{ csrf() }}<input type="hidden" name="action" value="delete">
+                <button class="px-3 py-1.5 rounded-lg border border-line font-bold hover:border-danger hover:text-danger"
+                  {{ 'disabled' if u.id == current_user.id }}>Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

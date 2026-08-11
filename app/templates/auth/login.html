@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Word Tree{% endblock %}
+
+{% block layout %}
+<main class="min-h-screen grid place-items-center p-6">
+  <form method="post" class="w-full max-w-sm bg-paper rounded-2xl border border-line p-7 flex flex-col gap-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="flex items-center gap-2.5">
+      <span class="w-8 h-8 rounded-[9px] grid place-items-center text-white text-[15px]
+                   bg-gradient-to-b from-purple to-purple-deep shadow-[0_3px_0_#5a37b5]">▤</span>
+      <span class="font-display font-extrabold text-lg">Word Tree <em class="not-italic text-purple">Level Designer</em></span>
+    </div>
+
+    <label class="flex flex-col gap-1.5">
+      <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Username</span>
+      <input name="username" autocomplete="username" autofocus required
+             class="px-3 py-2.5 rounded-lg border border-line bg-field font-bold focus:outline-none focus:border-purple">
+    </label>
+
+    <label class="flex flex-col gap-1.5">
+      <span class="text-[11px] font-bold uppercase tracking-wide text-ink-soft">Password</span>
+      <input name="password" type="password" autocomplete="current-password" required
+             class="px-3 py-2.5 rounded-lg border border-line bg-field font-bold focus:outline-none focus:border-purple">
+    </label>
+
+    <label class="flex items-center gap-2 text-sm text-ink-soft">
+      <input type="checkbox" name="remember" class="accent-purple"> Keep me signed in
+    </label>
+
+    <button class="mt-1 rounded-[10px] bg-purple text-white font-bold py-2.5 shadow-[0_3px_0_#6f45d8] active:translate-y-0.5 active:shadow-[0_1px_0_#6f45d8]">
+      Sign in
+    </button>
+  </form>
+</main>
+{% endblock %}
