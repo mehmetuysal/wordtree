@@ -199,11 +199,14 @@ function buildRow(container, node, depthIdx, parentId, index, siblings) {
   };
 
   const bRe = el("button", "ic re", "↻");
-  bRe.title = node.children.length
-    ? (isRoot ? "Regenerate the whole tree below this word with AI"
-              : "Regenerate this word and its whole branch with AI")
-    : "Regenerate this word with AI";
-  bRe.onclick = () => regenerate(node, { keepWord: isRoot, btn: bRe });
+  const named = !!(node.word || "").trim();
+  bRe.title = !named
+    ? "Fill this word in with AI, from its parent and siblings"
+    : node.children.length
+      ? (isRoot ? "Regenerate the whole tree below this word with AI"
+                : "Regenerate this word and its whole branch with AI")
+      : "Regenerate this word with AI";
+  bRe.onclick = () => regenerate(node, { keepWord: isRoot && named, btn: bRe });
 
   const bUp = el("button", "ic", "↑");
   bUp.title = "Move up";
@@ -258,7 +261,7 @@ async function regenerate(node, { keepWord = false, btn = null } = {}) {
 }
 
 $("btn-regen-tree").onclick = () =>
-  regenerate(tree, { keepWord: true, btn: $("btn-regen-tree") });
+  regenerate(tree, { keepWord: !!(tree.word || "").trim(), btn: $("btn-regen-tree") });
 
 function swap(parentId, index, dir) {
   const p = findNode(tree, parentId);

@@ -169,26 +169,41 @@ def _fit_shape(raw, shape):
     return node
 
 
-def regenerate_branch(word, shape, *, path=None, avoid=None, keep_word=False):
+def regenerate_branch(word, shape, *, path=None, avoid=None, keep_word=False, topic=""):
     """Re-generate a node and its whole subtree, keeping the existing shape.
 
-    `shape` is the subtree stripped down to nesting only: {"children": [...]}.
-    The result has exactly the same nesting, so the caller can map the new
-    words onto the existing nodes in place and keep ids/flags/offsets.
+    `word` may be empty — an unnamed node the editor wants filled in. `shape` is
+    the subtree stripped down to nesting only: {"children": [...]}. The result
+    has exactly the same nesting, so the caller can map the new words onto the
+    existing nodes in place and keep ids/flags/offsets.
     """
+    word = (word or "").strip()
+    keep_word = keep_word and bool(word)
     depth = min(MAX_DEPTH, _shape_depth(shape))
     banned = {w.upper() for w in (avoid or []) if w}
     if keep_word:
-        banned.discard(word.strip().upper())
+        banned.discard(word.upper())
+
+    parents = [p for p in (path or [])[:-1] if p and p != "?"]
+    subtree = " and its subtree" if shape.get("children") else ""
 
     lines = []
     if keep_word:
         lines.append(f"Keep the root word '{word}' exactly as it is and rebuild everything below it.")
-    else:
+    elif word:
         lines.append(
             f"Replace the word '{word}' with a different, better-fitting word, "
             "then rebuild its entire subtree around the new word."
         )
+    elif parents:
+        lines.append(
+            f"This slot has no word yet. Choose the word that belongs here as a "
+            f"child of '{parents[-1]}'{subtree}."
+        )
+    elif topic:
+        lines.append(f"This slot has no word yet. Build it{subtree} for a level about '{topic}'.")
+    else:
+        lines.append(f"This slot has no word yet. Choose a broad category word for it{subtree}.")
     if path:
         lines.append("Its position in the tree, from the root down: " + " > ".join(path) + ".")
     lines.append(
@@ -211,7 +226,7 @@ def regenerate_branch(word, shape, *, path=None, avoid=None, keep_word=False):
         taken = set(banned)
         if not keep_word:
             return node, _blank_duplicates(node, taken)
-        node["word"] = word.strip().upper()          # the root word is off limits
+        node["word"] = word.upper()                  # the root word is off limits
         taken.add(node["word"])
         rejected = []
         for child in node.get("children") or []:

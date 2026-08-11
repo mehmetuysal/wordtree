@@ -359,12 +359,15 @@ Designer.onSuggest(async (node, path, avoid) => {
 });
 
 Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
-  const word = (node.word || "").trim();
-  if (!word) { toast("Give the node a word before regenerating it.", "error"); return null; }
   try {
     const { node: fresh } = await api("/api/ai/regenerate-branch", {
       method: "POST",
-      body: JSON.stringify({ word, path, shape, avoid, keepWord }),
+      // an unnamed node is filled in from its parent, or from the level name
+      // when it is the root — no word needed to press ↻
+      body: JSON.stringify({
+        word: (node.word || "").trim(), path, shape, avoid, keepWord,
+        topic: meta().name || "",
+      }),
     });
     return fresh;
   } catch (err) {

@@ -40,17 +40,21 @@ def regenerate_branch():
     data = request.get_json(silent=True) or {}
     word = (data.get("word") or "").strip()
     shape = data.get("shape")
-    if not word:
-        return jsonify(error="A word is required."), 400
+    path = data.get("path") or []
+    topic = (data.get("topic") or "").strip()
     if not isinstance(shape, dict):
         return jsonify(error="A shape is required."), 400
+    # an empty word is fine as long as there is something to go on
+    if not word and len(path) < 2 and not topic:
+        return jsonify(error="Name the root word or the level first."), 400
 
     node = ai.regenerate_branch(
         word,
         shape,
-        path=data.get("path") or [],
+        path=path,
         avoid=data.get("avoid") or [],
         keep_word=bool(data.get("keepWord")),
+        topic=topic,
     )
     return jsonify(node=node)
 
