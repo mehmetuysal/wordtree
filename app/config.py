@@ -22,6 +22,10 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     WTF_CSRF_TIME_LIMIT = None
 
+    # First admin for a fresh deployment — see _bootstrap_admin() in app/__init__.py
+    ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
     # OpenAI — used by app/services/ai.py
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")

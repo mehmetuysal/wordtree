@@ -34,3 +34,6 @@ role checks.
   `services/ai.py` enforces the exact-duplicate half (retry once, then leave the
   slot empty), and the editor highlights manual duplicates.
 - Deployment start command lives in `railpack.json`, not in the Railway UI.
+- `_bootstrap_admin()` (`app/__init__.py`) creates the first admin from
+  `ADMIN_USERNAME`/`ADMIN_PASSWORD` and only when the users table is empty. Keep
+  that guard — it's the difference between a bootstrap and a backdoor.

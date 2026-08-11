@@ -36,5 +36,44 @@ def create_app(config_object=Config):
 
     with app.app_context():
         db.create_all()
+        _bootstrap_admin(app)
 
     return app
+
+
+def _bootstrap_admin(app):
+    """Create the very first admin from ADMIN_USERNAME / ADMIN_PASSWORD.
+
+    On a deployed instance there is no other way in: the tables are created
+    automatically but an empty users table just renders a login nobody can pass,
+    with no error to explain it. Only ever runs when there are no users at all.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from .models import ROLE_ADMIN, User
+
+    if db.session.execute(db.select(db.func.count(User.id))).scalar():
+        return
+
+    username = (app.config.get("ADMIN_USERNAME") or "").strip()
+    password = app.config.get("ADMIN_PASSWORD") or ""
+    if not username or not password:
+        app.logger.warning(
+            "No users exist yet, so nobody can sign in. Set ADMIN_USERNAME and "
+            "ADMIN_PASSWORD and redeploy, or run `flask create-user NAME`."
+        )
+        return
+
+    user = User(username=username, role=ROLE_ADMIN)
+    user.set_password(password)
+    db.session.add(user)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()   # another worker got there first
+        return
+    app.logger.warning(
+        "Created admin '%s' from ADMIN_USERNAME/ADMIN_PASSWORD. Remove those two "
+        "variables now — the password is sitting in the service environment.",
+        username,
+    )

@@ -104,15 +104,32 @@ Set these variables on the service:
 | --- | --- |
 | `SECRET_KEY` | required — the fallback is a known dev value, so sessions are forgeable without it |
 | `DATABASE_URL` | Postgres URL. **Without it the app writes SQLite into the container filesystem, which is wiped on every deploy** — levels and users disappear. Attach a Postgres service (or a volume mounted at `instance/`). |
+| `ADMIN_USERNAME` + `ADMIN_PASSWORD` | creates the first admin on boot, see below |
 | `OPENAI_API_KEY` | optional; the AI buttons degrade gracefully without it |
 | `OPENAI_MODEL` | optional, defaults to `gpt-4o-mini` |
 
-Tables are created on startup, but the first user is not — run it once against
-the deployed database:
+### The first admin
+
+Tables are created on startup but users are not, and an empty users table just
+renders a login nobody can pass — with no error. So set `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` and redeploy: `_bootstrap_admin()` creates that admin **only
+when the users table is completely empty**, logs a line saying so, and never
+touches an existing account. Delete both variables afterwards.
+
+Without them the app logs `No users exist yet, so nobody can sign in.` on every
+boot, which is the answer to "why can't I log in".
+
+The alternative is a shell inside the running container:
 
 ```bash
-railway run flask create-user admin
+railway ssh                       # then, in the container:
+FLASK_APP=run.py flask create-user admin
 ```
+
+`railway run` does **not** work for this — it runs the command on your own
+machine with the service's variables injected, so it would write to a local
+database (and Railway's internal `DATABASE_URL` isn't reachable from there
+anyway).
 
 ## Moving to Supabase later
 
