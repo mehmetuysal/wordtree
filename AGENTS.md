@@ -28,3 +28,9 @@ role checks.
   (`app/blueprints/levels.py`) — do not trust the client shape.
 - No migrations yet: `db.create_all()` runs at startup. Add Alembic before the
   first breaking schema change, definitely before the Supabase move.
+- Word uniqueness is a product rule, not a suggestion: a hidden word the player
+  must place has to be unambiguous, so every word appears once per level and must
+  fit exactly one parent. Prompts state it, `_blank_duplicates()` in
+  `services/ai.py` enforces the exact-duplicate half (retry once, then leave the
+  slot empty), and the editor highlights manual duplicates.
+- Deployment start command lives in `railpack.json`, not in the Railway UI.

@@ -9,7 +9,7 @@ user management, persistence and batch import/export.
 ```bash
 python3.11 -m venv venv
 ./venv/bin/pip install -r requirements.txt
-cp .env.example .env            # set SECRET_KEY, optionally OPENAI_API_KEY
+printf 'SECRET_KEY=dev\nOPENAI_API_KEY=\nOPENAI_MODEL=gpt-4o-mini\n' > .env
 
 FLASK_APP=run.py ./venv/bin/flask create-user admin   # first user is always admin
 FLASK_APP=run.py ./venv/bin/flask seed-demo           # optional sample level
@@ -80,10 +80,39 @@ number clash you pick `skip`, `overwrite` or `renumber` (import as new levels).
 | GET | `/api/ai/status` | whether an OpenAI key is configured |
 | POST | `/api/ai/generate-tree` | `{topic, breadth, depth, hideFromDepth}` |
 | POST | `/api/ai/suggest-children` | `{word, path, avoid, count}` |
+| POST | `/api/ai/regenerate-branch` | `{word, shape, path, avoid, keepWord}` — rebuild a node and its subtree |
 
 All routes require a session; `/admin/users` requires the admin role. Non-GET
 requests need the `X-CSRFToken` header (the front end reads it from the
 `csrf-token` meta tag).
+
+## Deploying (Railway)
+
+`railpack.json` sets the start command — Railway's builder can't autodetect it
+because the entrypoint is `run.py`, not `app.py`:
+
+```
+gunicorn run:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+```
+
+The 120s timeout matters: AI calls regularly take longer than gunicorn's 30s
+default, which would kill the worker mid-request.
+
+Set these variables on the service:
+
+| Variable | |
+| --- | --- |
+| `SECRET_KEY` | required — the fallback is a known dev value, so sessions are forgeable without it |
+| `DATABASE_URL` | Postgres URL. **Without it the app writes SQLite into the container filesystem, which is wiped on every deploy** — levels and users disappear. Attach a Postgres service (or a volume mounted at `instance/`). |
+| `OPENAI_API_KEY` | optional; the AI buttons degrade gracefully without it |
+| `OPENAI_MODEL` | optional, defaults to `gpt-4o-mini` |
+
+Tables are created on startup, but the first user is not — run it once against
+the deployed database:
+
+```bash
+railway run flask create-user admin
+```
 
 ## Moving to Supabase later
 
