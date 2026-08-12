@@ -29,7 +29,16 @@ role checks.
   Tailwind utility classes (play CDN, configured in `templates/base.html`);
   the designer panels keep their original CSS classes.
 - Every OpenAI call goes through `app/services/ai.py`. It raises `AIUnavailable`
-  when `OPENAI_API_KEY` is missing and the UI degrades gracefully.
+  when `OPENAI_API_KEY` is missing and the UI degrades gracefully. Models the UI
+  may pick live in `ai.MODELS` (first entry is the default); `_pick_model()`
+  rejects anything not on that list, so never pass a client string to the API
+  directly. Every AI endpoint takes an optional `model`.
+- Two AI settings are load-bearing, don't drop them: `reasoning_effort=low` (GPT-5
+  models default to medium and then spend minutes on a one-word edit) and the
+  client `timeout`/`max_retries=0` (the SDK defaults to 600s with 2 retries, which
+  the UI shows as a permanently stuck button). `_complete()` logs model, effort,
+  duration and tokens for every call, and turns SDK errors into `AIFailed` so the
+  blueprint answers JSON instead of an HTML traceback.
 - Trees are validated and uppercased server-side in `normalize_tree()`
   (`app/blueprints/levels.py`) — do not trust the client shape.
 - No migrations yet: `db.create_all()` runs at startup. Add Alembic before the

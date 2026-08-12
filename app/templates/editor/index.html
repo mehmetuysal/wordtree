@@ -118,6 +118,14 @@
       <div class="bank hiddenel" id="bank"></div>
     </div>
 
+    <!-- ---------------- AI command bar: edits the tree, never chats ---------------- -->
+    <form class="ai-bar" id="ai-bar" autocomplete="off">
+      <select id="ai-model" title="Model"></select>
+      <input id="ai-cmd" type="text" placeholder="Tell the AI what to change — “add 3 more sports under GAMES”, “rename the root to KITCHEN”, “make the leaves hidden”…">
+      <button class="btn primary" id="btn-ai-apply" type="submit">Apply</button>
+      <button class="btn ghost-btn hiddenel" id="btn-ai-undo" type="button" title="Put the tree back the way it was">Undo</button>
+    </form>
+
     <div class="tree-hint">
       <b>Click</b> a word to select it and get its toolbar · <b>double-click</b> to rename ·
       <b>drag</b> to move it with its whole branch · <b>Alt+double-click</b> to snap it back.

@@ -644,6 +644,27 @@ window.Designer = {
     selectedId = editingId = null;
     renderAll();
   },
+  /** Replace the tree but keep the manual drag offsets of words that survived —
+      used by the AI command bar, where a small edit shouldn't reset the layout. */
+  applyTree(data) {
+    const offsets = new Map();
+    (function collect(n) {
+      const w = (n.word || "").trim().toUpperCase();
+      if (w && (n.ox || n.oy) && !offsets.has(w)) offsets.set(w, { x: n.ox, y: n.oy });
+      n.children.forEach(collect);
+    })(tree);
+
+    tree = addIds(data && typeof data.word !== "undefined" ? data : { word: "", hidden: false });
+    (function restore(n) {
+      const off = offsets.get((n.word || "").trim().toUpperCase());
+      if (off) { n.ox = off.x; n.oy = off.y; }
+      n.children.forEach(restore);
+    })(tree);
+
+    collapsedSet.clear();
+    selectedId = editingId = null;
+    renderAll();
+  },
   /** The tree in its persisted shape. */
   getTree() { return stripIds(tree); },
   emptyTree() { return { word: "", hidden: false }; },

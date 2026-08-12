@@ -13,6 +13,8 @@ const state = {
   selected: new Set(), // ids ticked for batch export
   dirty: false,
   filter: "",
+  model: "",           // picked in the AI bar, sent with every AI request
+  aiUndo: null,        // the tree as it was before the last AI edit
 };
 
 /* ============================ helpers ============================ */
@@ -23,8 +25,9 @@ async function api(url, options = {}) {
     ...options,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error((data && data.error) || res.statusText);
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* an error page, not JSON */ }
+  if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
   return data;
 }
 
@@ -149,9 +152,15 @@ async function confirmDiscard() {
   return await save();
 }
 
+function clearAiUndo() {
+  state.aiUndo = null;
+  $("btn-ai-undo").classList.add("hiddenel");
+}
+
 async function switchTo(id, { force = false } = {}) {
   if (id === state.currentId && !force) return;
   if (!force && !(await confirmDiscard())) return;
+  clearAiUndo();      // it belongs to the level we are leaving
 
   const level = await api(`/api/levels/${id}`);
   state.currentId = level.id;
@@ -352,6 +361,54 @@ function importIntoEditor() {
 
 /* ============================ AI ============================ */
 
+/** The AI command bar: an instruction in, an updated tree out. It never answers
+    in words — the only visible result is the tree changing. */
+async function runTreeEdit(event) {
+  event.preventDefault();
+  const instruction = $("ai-cmd").value.trim();
+  if (!instruction) return;
+
+  const bar = $("ai-bar"), btn = $("btn-ai-apply"), input = $("ai-cmd");
+  const before = Designer.getTree();     // one step back, in case the edit guts the tree
+  bar.classList.add("busy");
+  btn.disabled = input.disabled = true;
+  btn.textContent = "Applying…";
+  try {
+    const { tree, duplicates } = await api("/api/ai/edit-tree", {
+      method: "POST",
+      body: JSON.stringify({
+        instruction,
+        tree: Designer.getTree(),
+        topic: meta().name || "",
+        model: state.model,
+      }),
+    });
+    const wordsBefore = Designer.stats().words;
+    Designer.applyTree(tree);
+    Designer.fitZoom();
+    markDirty(true);
+    input.value = "";
+    state.aiUndo = before;
+    $("btn-ai-undo").classList.remove("hiddenel");
+    const s = Designer.stats();
+    const lost = wordsBefore - s.words;
+    toast(`Tree updated — ${s.words} words, ${s.hidden} to place.`, "success");
+    if (lost >= 3) {
+      toast(`That removed ${lost} words. Undo is next to Apply.`, "error");
+    }
+    if (duplicates && duplicates.length) {
+      toast("Repeated words to fix: " + duplicates.join(", "), "error");
+    }
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    bar.classList.remove("busy");
+    btn.disabled = input.disabled = false;
+    btn.textContent = "Apply";
+    input.focus();
+  }
+}
+
 async function runGenerate() {
   const topic = $("ai-topic").value.trim();
   if (!topic) { $("ai-err").textContent = "Give it a topic first."; return; }
@@ -366,6 +423,7 @@ async function runGenerate() {
         breadth: +$("ai-breadth").value,
         depth: +$("ai-depth").value,
         hideFromDepth: +$("ai-hide").value,
+        model: state.model,
       }),
     });
     Designer.setTree(tree);
@@ -388,7 +446,7 @@ Designer.onSuggest(async (node, path, avoid) => {
   try {
     const { words } = await api("/api/ai/suggest-children", {
       method: "POST",
-      body: JSON.stringify({ word, path, avoid, count: 4 }),
+      body: JSON.stringify({ word, path, avoid, count: 4, model: state.model }),
     });
     return words;
   } catch (err) {
@@ -405,7 +463,7 @@ Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
       // when it is the root — no word needed to press ↻
       body: JSON.stringify({
         word: (node.word || "").trim(), path, shape, avoid, keepWord,
-        topic: meta().name || "",
+        topic: meta().name || "", model: state.model,
       }),
     });
     return fresh;
@@ -508,6 +566,20 @@ $("btn-ai").onclick = () => {
 $("btn-ai-cancel").onclick = () => $("ov-ai").classList.add("hiddenel");
 $("btn-ai-run").onclick = runGenerate;
 
+$("ai-bar").addEventListener("submit", runTreeEdit);
+$("btn-ai-undo").onclick = () => {
+  if (!state.aiUndo) return;
+  Designer.applyTree(state.aiUndo);
+  Designer.fitZoom();
+  markDirty(true);
+  clearAiUndo();
+  toast("Reverted the AI edit.");
+};
+$("ai-model").onchange = e => {
+  state.model = e.target.value;
+  localStorage.setItem("wordtree.model", state.model);
+};
+
 $("btn-menu").onclick = e => {
   e.stopPropagation();
   $("menu").classList.toggle("hiddenel");
@@ -572,11 +644,26 @@ window.addEventListener("beforeunload", e => {
   if (target) await switchTo(target.id, { force: true });
   else newLevel();
 
-  api("/api/ai/status").then(({ configured }) => {
+  api("/api/ai/status").then(({ configured, models, model }) => {
     if (!configured) {
       $("btn-ai").title = "Set OPENAI_API_KEY on the server to enable AI generation";
       $("btn-ai").style.opacity = ".55";
+      $("ai-cmd").placeholder = "Set OPENAI_API_KEY on the server to use AI editing";
+      $("ai-cmd").disabled = $("btn-ai-apply").disabled = $("ai-model").disabled = true;
+      return;
     }
+    // the picker drives every AI call on the page, not just the command bar
+    const saved = localStorage.getItem("wordtree.model");
+    state.model = models.some(m => m.id === saved) ? saved : model;
+    const select = $("ai-model");
+    select.innerHTML = "";
+    models.forEach(m => {
+      const option = document.createElement("option");
+      option.value = m.id;
+      option.textContent = m.note ? `${m.label} — ${m.note}` : m.label;
+      option.selected = m.id === state.model;
+      select.appendChild(option);
+    });
   });
 })();
 

@@ -48,6 +48,48 @@ Every action exists in both, so collapse whichever you don't need (`Alt+2`).
 - **Drag** a word to move it with its whole branch, **Alt+double-click** to snap
   it back. `↻ Tree` in the header rebuilds every word under the root.
 
+## AI command bar
+
+Under the tree there is a model picker and a command box. It edits the tree —
+it never answers in words, the only visible result is the tree changing:
+
+- *“add two more puzzle types under PUZZLE”*
+- *“rename the root to GAZETTE”*, *“delete the WEATHER branch”*
+- *“make every leaf shown instead of hidden”*
+
+The whole tree goes to the model and the whole tree comes back, so it can also
+restructure. Words it adds are `hidden` unless you say otherwise, manual drag
+offsets survive for words that are still there, and repeated words are reported
+in a toast rather than silently blanked (it's your tree, not generated output).
+
+**Undo** appears next to Apply after an edit and puts the tree back, and a
+warning toast fires if the edit dropped three or more words. Nothing is written
+to the database until you Save.
+
+The picker drives **every** AI action on the page (✨, ↻, Generate too) and is
+remembered in `localStorage`.
+
+### Models
+
+Default is `gpt-5.6-luna`. Measured on a real 19-word tree edit, three runs each:
+
+| model | times | |
+| --- | --- | --- |
+| `gpt-5.6-luna` | 3.0s, 2.8s, 3.3s | the default |
+| `gpt-5.6-terra` | 4.2s, 14.5s, 16.3s | fine, less predictable |
+| `gpt-5.6-sol` | timeout ×3 | the flagship, but it usually never answers |
+| `gpt-5.5` | 3.6s, 3.4s, 3.6s | |
+| `gpt-4o-mini` | 2.6s, 3.1s, 2.0s | once returned 6 of 19 words — don't trust it with whole-tree edits |
+
+Two settings keep that from turning into a hung UI: `OPENAI_TIMEOUT` (45s, and
+the SDK's own default of 600s with retries is overridden) and
+`OPENAI_REASONING_EFFORT` (`low` — GPT-5 models default to `medium`, which turns
+a 4s edit into minutes). Every call is logged as
+`ai tree_edit model=… effort=… 2.7s tokens=286/1012`.
+
+`OPENAI_MODEL` no longer changes the default; it only adds an extra option to
+the picker if you point it at a model that isn't listed.
+
 ## Keyboard
 
 - `⌘S` / `Ctrl+S` — save
@@ -107,7 +149,8 @@ current-level only — batch export stays JSON. The file is named after the leve
 | POST | `/api/levels/duplicate/<id>` | copy as a new level |
 | GET | `/api/levels/export?ids=1,2` | batch export (all levels if `ids` omitted) |
 | POST | `/api/levels/import?mode=skip` | batch import |
-| GET | `/api/ai/status` | whether an OpenAI key is configured |
+| GET | `/api/ai/status` | key configured? plus the model list and default |
+| POST | `/api/ai/edit-tree` | `{instruction, tree, topic, model}` → the updated tree |
 | POST | `/api/ai/generate-tree` | `{topic, breadth, depth, hideFromDepth}` |
 | POST | `/api/ai/suggest-children` | `{word, path, avoid, count}` |
 | POST | `/api/ai/regenerate-branch` | `{word, shape, path, avoid, keepWord}` — rebuild a node and its subtree |

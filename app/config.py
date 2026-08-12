@@ -43,3 +43,7 @@ class Config:
     # OpenAI — used by app/services/ai.py
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_TIMEOUT = float(os.environ.get("OPENAI_TIMEOUT", 45))
+    # GPT-5 models only: "none" | "low" | "medium" | "high". Anything above low
+    # makes the flagship spend minutes thinking about a one-word edit.
+    OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "low")

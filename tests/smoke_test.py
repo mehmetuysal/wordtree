@@ -93,8 +93,13 @@ c.delete(f"/api/levels/{lv['id']}")
 assert len(c.get("/api/levels").get_json()["levels"]) == 4
 
 # ---- ai without a key
-assert c.get("/api/ai/status").get_json() == {"configured": False}
+assert c.get("/api/ai/status").get_json() == {"configured": False, "models": [], "model": ""}
 r = c.post("/api/ai/generate-tree", json={"topic": "fruit"})
+assert r.status_code == 503, (r.status_code, r.get_json())
+# tree edits are validated before the key is even needed
+assert c.post("/api/ai/edit-tree", json={"tree": {"word": "A"}}).status_code == 400
+assert c.post("/api/ai/edit-tree", json={"instruction": "go"}).status_code == 400
+r = c.post("/api/ai/edit-tree", json={"instruction": "go", "tree": {"word": "A"}})
 assert r.status_code == 503, (r.status_code, r.get_json())
 
 # ---- admin pages
