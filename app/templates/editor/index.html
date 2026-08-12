@@ -132,6 +132,12 @@
   <div class="modal">
     <h3 id="export-title">Export</h3>
     <div class="field-row">
+      <label class="grow">Format
+        <select id="export-format">
+          <option value="json">JSON — whole level</option>
+          <option value="csv">CSV — tree only</option>
+        </select>
+      </label>
       <label class="grow">Scope
         <select id="export-scope">
           <option value="current">Current level</option>
@@ -139,6 +145,9 @@
           <option value="all">All levels</option>
         </select>
       </label>
+    </div>
+    <div class="export-note hiddenel" id="export-note">
+      CSV holds one tree: a row per word, indented into the column that matches its depth.
     </div>
     <textarea id="export-text" readonly></textarea>
     <div class="modal-btns">

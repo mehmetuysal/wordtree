@@ -80,6 +80,23 @@ A single level, and the batch format:
 Import accepts a bare level object, a list, or the wrapper above. On a level
 number clash you pick `skip`, `overwrite` or `renumber` (import as new levels).
 
+### CSV export
+
+The export modal also writes the tree as CSV — one row per word, sitting in the
+column that matches its depth, which is the shape the level spreadsheets use:
+
+```
+NEWSPAPER,,,
+,PUZZLE,,
+,,CROSSWORD,
+,,,ACROSS
+```
+
+Columns = tree depth, CRLF line endings, no trailing newline. It carries the
+tree only (no level number, moves, coins or hidden flags), so it is
+current-level only — batch export stays JSON. The file is named after the level
+(`NEWSPAPER.csv`, or `LEVEL_3.csv` when the level has no name).
+
 ## API
 
 | Method | Route | |

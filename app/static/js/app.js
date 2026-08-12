@@ -219,9 +219,46 @@ function currentLevelJson() {
   }, null, 2);
 }
 
+/** The tree as CSV: one row per word, in the column matching its depth.
+    Same shape the level spreadsheets use — CRLF, no trailing newline. */
+function treeToCsv(tree) {
+  const rows = [];
+  let width = 1;
+  (function walk(node, depth) {
+    if (!node) return;
+    width = Math.max(width, depth + 1);
+    rows.push([depth, (node.word || "").trim()]);
+    (node.children || []).forEach(c => walk(c, depth + 1));
+  })(tree, 0);
+
+  const cell = v => (/[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v);
+  return rows.map(([depth, word]) => {
+    const cols = new Array(width).fill("");
+    cols[depth] = cell(word);
+    return cols.join(",");
+  }).join("\r\n");
+}
+
+function csvFilename() {
+  const m = meta();
+  const name = (m.name || "").trim().replace(/[^\w -]+/g, "").trim();
+  return (name ? name.toUpperCase().replace(/\s+/g, "_") : `LEVEL_${m.number}`) + ".csv";
+}
+
 async function fillExport() {
   const scope = $("export-scope").value;
+  const csv = $("export-format").value === "csv";
   const box = $("export-text");
+
+  // a CSV carries a single tree and no level metadata, so it is current-level only
+  $("export-scope").disabled = csv;
+  $("export-note").classList.toggle("hiddenel", !csv);
+  $("btn-download").textContent = csv ? "Download .csv" : "Download .json";
+  if (csv) {
+    $("export-scope").value = "current";
+    box.value = treeToCsv(Designer.getTree());
+    return;
+  }
   if (scope === "current") {
     box.value = currentLevelJson();
     return;
@@ -238,13 +275,15 @@ async function fillExport() {
 }
 
 function openExport(scope) {
+  // CSV is single-tree; a batch export has to fall back to JSON
+  if (scope !== "current" && $("export-format").value === "csv") $("export-format").value = "json";
   $("export-scope").value = scope;
   $("ov-export").classList.remove("hiddenel");
   fillExport();
 }
 
-function download(text, filename) {
-  const blob = new Blob([text], { type: "application/json" });
+function download(text, filename, type = "application/json") {
+  const blob = new Blob([text], { type });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -418,6 +457,7 @@ $("sel-all").onchange = e => {
 $("btn-export").onclick = () => openExport("current");
 $("btn-export-selected").onclick = () => openExport(state.selected.size ? "selected" : "all");
 $("export-scope").onchange = fillExport;
+$("export-format").onchange = fillExport;
 $("btn-export-close").onclick = () => $("ov-export").classList.add("hiddenel");
 $("btn-copy").onclick = async () => {
   try {
@@ -427,6 +467,10 @@ $("btn-copy").onclick = async () => {
   } catch { $("export-text").select(); }
 };
 $("btn-download").onclick = () => {
+  if ($("export-format").value === "csv") {
+    download($("export-text").value, csvFilename(), "text/csv;charset=utf-8");
+    return;
+  }
   const scope = $("export-scope").value;
   const name = scope === "current" ? `level_${meta().number}.json` : "wordtree-levels.json";
   download($("export-text").value, name);
