@@ -39,7 +39,8 @@ app/
 
 ## Editing the tree
 
-Everything happens on the tree itself — the old Structure row list is disabled.
+Two ways to edit the same tree: the **Structure** row list, or the tree itself.
+Every action exists in both, so collapse whichever you don't need (`Alt+2`).
 
 - **Click** a word to select it; a toolbar appears above it with hidden/shown,
   rename, add child, ✨ AI children, ↻ regenerate, reorder and delete.
@@ -52,7 +53,7 @@ Everything happens on the tree itself — the old Structure row list is disabled
 - `⌘S` / `Ctrl+S` — save
 - `Alt+↑` / `Alt+↓` — previous / next level
 - `Enter` — rename the selected word, `Esc` — deselect
-- `Alt+1` — collapse / expand the level list
+- `Alt+1` / `Alt+2` — collapse / expand the level list / the structure panel
 - `/` — focus the level search
 - `Esc` — close any modal
 

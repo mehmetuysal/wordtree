@@ -73,11 +73,20 @@
     </div>
   </aside>
 
-  <!-- ---------------- structure — disabled, the tree is the editor now ----------------
-       Kept in the DOM (hidden) so the row editor keeps working behind the scenes and
-       can be switched back on by dropping the `hiddenel` class. -->
-  <section class="editor hiddenel" id="pane-structure">
+  <!-- ------------------------------ structure ------------------------------
+       The row editor. Optional now — the tree canvas can do everything too, so
+       this pane collapses to a rail. Both drive the same action helpers. -->
+  <section class="editor" id="pane-structure">
+    <button class="rail" id="rail-structure" title="Show structure (⌥2)" aria-label="Show structure"><span>Structure</span></button>
+    <div class="panel-head">
+      <h2>Structure</h2>
+      <button class="collapse-btn" id="btn-collapse-structure" title="Hide structure (⌥2)" aria-label="Hide structure">‹</button>
+    </div>
     <div class="rows" id="rows"></div>
+    <div class="legend">
+      <span class="pill pill-hidden">hidden</span> goes to the word bank — the player must place it.
+      <span class="pill pill-shown">shown</span> is revealed when the level starts.
+    </div>
   </section>
 
   <!-- ------------------------------ preview ------------------------------ -->
