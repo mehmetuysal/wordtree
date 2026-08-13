@@ -29,10 +29,10 @@ role checks.
   Tailwind utility classes (play CDN, configured in `templates/base.html`);
   the designer panels keep their original CSS classes.
 - Every OpenAI call goes through `app/services/ai.py`. It raises `AIUnavailable`
-  when `OPENAI_API_KEY` is missing and the UI degrades gracefully. Models the UI
-  may pick live in `ai.MODELS` (first entry is the default); `_pick_model()`
-  rejects anything not on that list, so never pass a client string to the API
-  directly. Every AI endpoint takes an optional `model`.
+  when `OPENAI_API_KEY` is missing and the UI degrades gracefully. One model for
+  the whole app: `ai.DEFAULT_MODEL`, overridable with `OPENAI_MODEL`. Endpoints
+  still accept a `model`, but `_pick_model()` only honours ids in
+  `ai.KNOWN_MODELS` — never pass a client string to the API directly.
 - Two AI settings are load-bearing, don't drop them: `reasoning_effort=low` (GPT-5
   models default to medium and then spend minutes on a one-word edit) and the
   client `timeout`/`max_retries=0` (the SDK defaults to 600s with 2 retries, which

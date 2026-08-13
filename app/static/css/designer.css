@@ -226,14 +226,12 @@ body.dragging, body.dragging .node.draggable{cursor:grabbing}
 .node-tools .pill{margin-right:2px}
 /* ---------- AI command bar ---------- */
 .ai-bar{display:flex;gap:8px;align-items:center;padding:10px 18px 4px}
-.ai-bar select,.ai-bar input{
-  font:inherit;font-size:13px;padding:9px 11px;border:1.5px solid var(--line);
-  border-radius:10px;background:var(--paper);color:var(--ink);
+.ai-bar input{
+  flex:1;min-width:0;font:inherit;font-size:13px;padding:9px 11px;
+  border:1.5px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);
 }
-.ai-bar select{font-weight:700;font-size:12px;flex:none;max-width:170px}
-.ai-bar input{flex:1;min-width:0}
 .ai-bar input::placeholder{color:#a8a2b6}
-.ai-bar input:focus,.ai-bar select:focus{outline:none;border-color:var(--purple)}
+.ai-bar input:focus{outline:none;border-color:var(--purple)}
 .ai-bar .btn{flex:none}
 .ai-bar.busy input{background:var(--field);color:var(--ink-soft)}
 

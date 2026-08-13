@@ -93,7 +93,7 @@ c.delete(f"/api/levels/{lv['id']}")
 assert len(c.get("/api/levels").get_json()["levels"]) == 4
 
 # ---- ai without a key
-assert c.get("/api/ai/status").get_json() == {"configured": False, "models": [], "model": ""}
+assert c.get("/api/ai/status").get_json() == {"configured": False, "model": ""}
 r = c.post("/api/ai/generate-tree", json={"topic": "fruit"})
 assert r.status_code == 503, (r.status_code, r.get_json())
 # tree edits are validated before the key is even needed

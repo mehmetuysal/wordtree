@@ -31,39 +31,31 @@ UNIQUE_RULE = (
 
 MAX_DEPTH = 6
 
-# Models offered in the UI, newest generation first. Sol is the flagship, but
-# measured on this workload it times out far more often than it answers, so the
-# default is Luna: same generation, ~3s every time, and plenty for tree edits.
-MODELS = [
-    {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna", "note": "fast and reliable"},
-    {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra", "note": "balanced, slower"},
-    {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol", "note": "flagship, often times out"},
-    {"id": "gpt-5.5", "label": "GPT-5.5", "note": "previous flagship"},
-    {"id": "gpt-5.4", "label": "GPT-5.4", "note": ""},
-    {"id": "gpt-4o-mini", "label": "GPT-4o mini", "note": "cheapest legacy"},
-]
-DEFAULT_MODEL = MODELS[0]["id"]
+# One model for everything, no picker. Luna is the cheap tier of the current
+# generation: $0.20 / $1.20 per 1M tokens, roughly $0.0006 per tree edit, and it
+# answered in ~3s on every test run. gpt-4o-mini is about $0.0002 cheaper per
+# edit but handed back 6 words of a 19-word tree once, which is not a trade
+# worth making. Override with OPENAI_MODEL if you disagree.
+DEFAULT_MODEL = "gpt-5.6-luna"
+
+# Anything a request may ask for. GPT-5.6: sol is the flagship but times out on
+# this workload far more often than it answers; terra is the balanced tier.
+KNOWN_MODELS = (
+    "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
+    "gpt-5.5", "gpt-5.4", "gpt-4o-mini",
+)
 
 
-def models():
-    """The picker's options — whatever OPENAI_MODEL is set to is always offered."""
-    configured = current_app.config.get("OPENAI_MODEL", "")
-    out = list(MODELS)
-    if configured and not any(m["id"] == configured for m in out):
-        out.append({"id": configured, "label": configured, "note": "from OPENAI_MODEL"})
-    return out
+def active_model():
+    configured = (current_app.config.get("OPENAI_MODEL") or "").strip()
+    return configured or DEFAULT_MODEL
 
 
 def _pick_model(requested):
-    """Trust only models we offer.
-
-    The fallback is DEFAULT_MODEL rather than OPENAI_MODEL on purpose: a stale
-    OPENAI_MODEL left in a .env silently downgrades every call, and a weak model
-    asked to rewrite a whole tree will happily hand back half of it.
-    """
-    if requested and any(m["id"] == requested for m in models()):
+    """Callers may name a model, but only one we know about."""
+    if requested and requested in KNOWN_MODELS:
         return requested
-    return DEFAULT_MODEL
+    return active_model()
 
 
 def _tree_schema(depth):
@@ -166,6 +158,10 @@ def _complete(user_prompt, schema, schema_name, *, model=None, system=SYSTEM_PRO
     except openai.APIError as err:
         took = time.perf_counter() - started
         current_app.logger.warning("ai %s model=%s FAILED %.1fs %s", schema_name, model_id, took, err)
+        if {getattr(err, "code", ""), getattr(err, "type", "")} & {
+            "insufficient_quota", "credit_balance_exhausted"
+        }:
+            raise AIFailed("The OpenAI account is out of credits — top it up to use AI.")
         raise AIFailed(f"{model_id}: {getattr(err, 'message', None) or err}")
 
     usage = getattr(resp, "usage", None)

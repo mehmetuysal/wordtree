@@ -66,29 +66,28 @@ in a toast rather than silently blanked (it's your tree, not generated output).
 warning toast fires if the edit dropped three or more words. Nothing is written
 to the database until you Save.
 
-The picker drives **every** AI action on the page (✨, ↻, Generate too) and is
-remembered in `localStorage`.
+### The model
 
-### Models
+There is no picker: everything on the page (the command bar, ✨, ↻, Generate)
+runs on one model, `gpt-5.6-luna` — $0.20 / $1.20 per 1M tokens, about
+**$0.0006 per tree edit**. Set `OPENAI_MODEL` to override it.
 
-Default is `gpt-5.6-luna`. Measured on a real 19-word tree edit, three runs each:
+Measured on a real 19-word tree edit, three runs each:
 
 | model | times | |
 | --- | --- | --- |
 | `gpt-5.6-luna` | 3.0s, 2.8s, 3.3s | the default |
-| `gpt-5.6-terra` | 4.2s, 14.5s, 16.3s | fine, less predictable |
+| `gpt-5.6-terra` | 4.2s, 14.5s, 16.3s | works, less predictable |
 | `gpt-5.6-sol` | timeout ×3 | the flagship, but it usually never answers |
 | `gpt-5.5` | 3.6s, 3.4s, 3.6s | |
-| `gpt-4o-mini` | 2.6s, 3.1s, 2.0s | once returned 6 of 19 words — don't trust it with whole-tree edits |
+| `gpt-4o-mini` | 2.6s, 3.1s, 2.0s | ~$0.0002 cheaper, but once returned 6 words of a 19-word tree |
 
-Two settings keep that from turning into a hung UI: `OPENAI_TIMEOUT` (45s, and
-the SDK's own default of 600s with retries is overridden) and
+Two settings stop a slow model from turning into a hung UI: `OPENAI_TIMEOUT`
+(45s; the SDK's own default is 600s with 2 retries) and
 `OPENAI_REASONING_EFFORT` (`low` — GPT-5 models default to `medium`, which turns
 a 4s edit into minutes). Every call is logged as
-`ai tree_edit model=… effort=… 2.7s tokens=286/1012`.
-
-`OPENAI_MODEL` no longer changes the default; it only adds an extra option to
-the picker if you point it at a model that isn't listed.
+`ai tree_edit model=… effort=… 2.7s tokens=286/1012`, and failures come back as
+JSON the UI can show, including a plain "out of credits" message.
 
 ## Keyboard
 

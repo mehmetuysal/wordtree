@@ -13,7 +13,6 @@ const state = {
   selected: new Set(), // ids ticked for batch export
   dirty: false,
   filter: "",
-  model: "",           // picked in the AI bar, sent with every AI request
   aiUndo: null,        // the tree as it was before the last AI edit
 };
 
@@ -380,7 +379,6 @@ async function runTreeEdit(event) {
         instruction,
         tree: Designer.getTree(),
         topic: meta().name || "",
-        model: state.model,
       }),
     });
     const wordsBefore = Designer.stats().words;
@@ -423,7 +421,6 @@ async function runGenerate() {
         breadth: +$("ai-breadth").value,
         depth: +$("ai-depth").value,
         hideFromDepth: +$("ai-hide").value,
-        model: state.model,
       }),
     });
     Designer.setTree(tree);
@@ -446,7 +443,7 @@ Designer.onSuggest(async (node, path, avoid) => {
   try {
     const { words } = await api("/api/ai/suggest-children", {
       method: "POST",
-      body: JSON.stringify({ word, path, avoid, count: 4, model: state.model }),
+      body: JSON.stringify({ word, path, avoid, count: 4 }),
     });
     return words;
   } catch (err) {
@@ -463,7 +460,7 @@ Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
       // when it is the root — no word needed to press ↻
       body: JSON.stringify({
         word: (node.word || "").trim(), path, shape, avoid, keepWord,
-        topic: meta().name || "", model: state.model,
+        topic: meta().name || "",
       }),
     });
     return fresh;
@@ -575,10 +572,6 @@ $("btn-ai-undo").onclick = () => {
   clearAiUndo();
   toast("Reverted the AI edit.");
 };
-$("ai-model").onchange = e => {
-  state.model = e.target.value;
-  localStorage.setItem("wordtree.model", state.model);
-};
 
 $("btn-menu").onclick = e => {
   e.stopPropagation();
@@ -644,26 +637,15 @@ window.addEventListener("beforeunload", e => {
   if (target) await switchTo(target.id, { force: true });
   else newLevel();
 
-  api("/api/ai/status").then(({ configured, models, model }) => {
+  api("/api/ai/status").then(({ configured, model }) => {
     if (!configured) {
       $("btn-ai").title = "Set OPENAI_API_KEY on the server to enable AI generation";
       $("btn-ai").style.opacity = ".55";
       $("ai-cmd").placeholder = "Set OPENAI_API_KEY on the server to use AI editing";
-      $("ai-cmd").disabled = $("btn-ai-apply").disabled = $("ai-model").disabled = true;
+      $("ai-cmd").disabled = $("btn-ai-apply").disabled = true;
       return;
     }
-    // the picker drives every AI call on the page, not just the command bar
-    const saved = localStorage.getItem("wordtree.model");
-    state.model = models.some(m => m.id === saved) ? saved : model;
-    const select = $("ai-model");
-    select.innerHTML = "";
-    models.forEach(m => {
-      const option = document.createElement("option");
-      option.value = m.id;
-      option.textContent = m.note ? `${m.label} — ${m.note}` : m.label;
-      option.selected = m.id === state.model;
-      select.appendChild(option);
-    });
+    $("ai-cmd").title = "Runs on " + model;
   });
 })();
 

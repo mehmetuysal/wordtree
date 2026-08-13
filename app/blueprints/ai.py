@@ -21,8 +21,8 @@ def handle_failed(err):
 @login_required
 def status():
     if not ai.is_configured():
-        return jsonify(configured=False, models=[], model="")
-    return jsonify(configured=True, models=ai.models(), model=ai.DEFAULT_MODEL)
+        return jsonify(configured=False, model="")
+    return jsonify(configured=True, model=ai.active_model())
 
 
 @bp.post("/edit-tree")
