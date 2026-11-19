@@ -1,5 +1,6 @@
 """The approved-levels workbook parser and `flask import-xlsx`, against a tiny
 synthetic workbook that has every irregularity the real sheet has."""
+import json
 import os
 import sys
 import tempfile
@@ -93,17 +94,34 @@ class T(Config):
 app = create_app(T)
 runner = app.test_cli_runner()
 out = runner.invoke(args=["import-xlsx", xlsx, "--dry-run"])
-assert out.exit_code == 0 and "would create 6" in out.output, out.output
+assert out.exit_code == 0 and "would be: created 6," in out.output, out.output
 with app.app_context():
     assert db.session.execute(db.select(db.func.count(Level.id))).scalar() == 0, "dry run wrote"
 
+with app.app_context():
+    # a tab without a number that was imported before locking existed is adopted,
+    # not added a second time
+    from app.services.xlsx_levels import load_levels as _ll
+    pairs_a = next(lv for lv in _ll(xlsx) if lv["name"] == "Pairs (A)")
+    db.session.add(Level(number=40, name="Pairs (A)", tree_json=json.dumps(pairs_a["tree"])))
+    # an editable level already sitting on an approved number
+
+    db.session.add(Level(number=2, name="Mine", tree_json='{"word": "MINE"}'))
+    db.session.commit()
 out = runner.invoke(args=["import-xlsx", xlsx])
-assert "created 6, updated 0, skipped 0" in out.output, out.output
-out = runner.invoke(args=["import-xlsx", xlsx])
-assert "created 0, updated 0, skipped 6" in out.output, out.output
+assert "created 4, updated 1, unchanged 0, skipped 1" in out.output, out.output
+assert "KEEP  #2 is an editable level ('Mine')" in out.output, out.output
+out = runner.invoke(args=["import-xlsx", xlsx, "--quiet"])
+assert "created 0, updated 0, unchanged 5, skipped 1" in out.output, out.output
+assert "WARN" not in out.output, "--quiet is for deploy logs"
+out = runner.invoke(args=["import-xlsx", xlsx, "--mode", "overwrite"])
+assert "created 0, updated 1, unchanged 5, skipped 0" in out.output, out.output
 with app.app_context():
     rows = {lv.number: lv for lv in db.session.execute(db.select(Level)).scalars()}
+    assert all(lv.locked for lv in rows.values()), "approved levels are locked"
     assert rows[1].name == "Food" and rows[1].status == "published"
+    assert rows[2].name == "Tip", "overwrite replaced the editable level"
+    assert rows[40].name == "Pairs (A)" and len(rows) == 6, sorted(rows)
     assert rows[7].name == "Force" and {lv.name for lv in rows.values()} >= {"Force (2)", "Pairs (A)", "Pairs (B)"}
 
 # ---- the workbook is the AI's reference, wherever the database is

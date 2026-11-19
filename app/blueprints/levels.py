@@ -74,6 +74,20 @@ def apply_payload(level, data, *, partial=False):
     level.updated_by_id = current_user.id
 
 
+class LockedError(Exception):
+    pass
+
+
+def _refuse_if_locked(level):
+    if level.locked:
+        raise LockedError("Approved levels are read-only. Duplicate it to make a version you can change.")
+
+
+@bp.errorhandler(LockedError)
+def handle_locked(err):
+    return jsonify(error=str(err)), 403
+
+
 @bp.errorhandler(TreeError)
 def handle_tree_error(err):
     return jsonify(error=str(err)), 400
@@ -114,6 +128,7 @@ def create_level():
 @login_required
 def update_level(level_id):
     level = db.session.get(Level, level_id) or abort(404)
+    _refuse_if_locked(level)
     apply_payload(level, request.get_json(silent=True) or {}, partial=True)
     db.session.commit()
     return jsonify(level.to_dict())
@@ -123,6 +138,7 @@ def update_level(level_id):
 @login_required
 def delete_level(level_id):
     level = db.session.get(Level, level_id) or abort(404)
+    _refuse_if_locked(level)
     db.session.delete(level)
     db.session.commit()
     return jsonify(ok=True)
@@ -218,6 +234,8 @@ def import_levels():
                 skipped.append(existing.number)
                 continue
             if existing and mode == "overwrite":
+                _refuse_if_locked(existing)
+            if existing and mode == "overwrite":
                 target, is_new = existing, False
             else:
                 is_new = True
@@ -235,7 +253,7 @@ def import_levels():
             target.updated_by_id = current_user.id
             db.session.flush()
             (created if is_new else updated).append(number)
-        except (TreeError, ValueError, TypeError) as err:
+        except (TreeError, LockedError, ValueError, TypeError) as err:
             errors.append({"index": i, "error": str(err)})
 
     db.session.commit()

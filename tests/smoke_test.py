@@ -90,10 +90,27 @@ assert res["created"] == [3, 4], res
 res = c.post("/api/levels/import", json={"levels": [{"tree": {"bad": True}}, {"level": 9, "tree": {"word": "X"}}]}).get_json()
 assert res["created"] == [9] and len(res["errors"]) == 1, res
 
+# ---- approved (locked) levels are read-only through the API
+with app.app_context():
+    from app.models import Level
+    locked = Level(number=50, name="Approved", status="published", locked=True, tree_json='{"word": "A"}')
+    db.session.add(locked)
+    db.session.commit()
+    locked_id = locked.id
+r = c.put(f"/api/levels/{locked_id}", json={"name": "Hacked"})
+assert r.status_code == 403 and "read-only" in r.get_json()["error"], r.get_json()
+assert c.delete(f"/api/levels/{locked_id}").status_code == 403
+res = c.post("/api/levels/import", json={"levels": [{"level": 50, "tree": {"word": "B"}}], "mode": "overwrite"}).get_json()
+assert not res["updated"] and "read-only" in res["errors"][0]["error"], res
+assert c.get(f"/api/levels/{locked_id}").get_json()["tree"]["word"] == "A"
+r = c.post(f"/api/levels/duplicate/{locked_id}")
+assert r.status_code == 201 and not r.get_json()["locked"], "a copy is editable"
+c.delete(f"/api/levels/{r.get_json()['id']}")
+
 # ---- delete
 assert c.delete("/api/levels/9999").status_code == 404
 c.delete(f"/api/levels/{lv['id']}")
-assert len(c.get("/api/levels").get_json()["levels"]) == 4
+assert len(c.get("/api/levels").get_json()["levels"]) == 5, "4 left plus the locked one"
 
 # ---- ai without a key
 assert c.get("/api/ai/status").get_json() == {"configured": False, "model": ""}

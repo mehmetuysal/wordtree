@@ -326,3 +326,9 @@ body.designer-page{height:100vh;overflow:hidden}
 .saving-badge.saved{color:#2f7d46}
 .spin{display:inline-block;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* approved levels: readable, not editable */
+.level-locked #rows,
+.level-locked #canvas .node.draggable{pointer-events:none}
+.level-locked #rows{opacity:.65}
+.level-item .state.locked{background:none;width:auto;height:auto;font-size:11px;line-height:1}

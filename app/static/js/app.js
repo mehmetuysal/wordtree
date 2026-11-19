@@ -14,6 +14,8 @@ const state = {
   dirty: false,
   filter: "",
   aiUndo: null,        // the tree as it was before the last AI edit
+  locked: false,       // the open level is an approved one: look, don't touch
+  aiReady: false,
 };
 
 /* ============================ helpers ============================ */
@@ -116,8 +118,9 @@ function renderList() {
     info.append(title, sub);
 
     const dot = document.createElement("span");
-    dot.className = "state" + (lv.status === "published" ? " published" : "");
-    dot.title = lv.status;
+    dot.className = "state" + (lv.locked ? " locked" : lv.status === "published" ? " published" : "");
+    dot.title = lv.locked ? "approved, read-only" : lv.status;
+    if (lv.locked) dot.textContent = "🔒";
 
     item.append(box, num, info, dot);
     item.onclick = () => switchTo(lv.id);
@@ -145,7 +148,7 @@ async function refreshList() {
 /* ============================ level switching ============================ */
 
 async function confirmDiscard() {
-  if (!state.dirty) return true;
+  if (!state.dirty || state.locked) return true;   // nothing on a locked level can be saved
   const answer = confirm("This level has unsaved changes.\n\nOK = save and continue, Cancel = stay here.");
   if (!answer) return false;
   return await save();
@@ -156,6 +159,18 @@ function clearAiUndo() {
   $("btn-ai-undo").classList.add("hiddenel");
 }
 
+// Approved levels are read-only on the server; this only keeps the UI from
+// inviting edits that Save would refuse.
+function applyLock(locked) {
+  state.locked = locked;
+  document.body.classList.toggle("level-locked", locked);
+  $("lock-badge").classList.toggle("hiddenel", !locked);
+  ["in-level", "in-name", "in-moves", "in-coins", "in-status", "btn-save",
+   "btn-regen-tree", "btn-reset-layout", "mi-delete"].forEach(id => { $(id).disabled = locked; });
+  $("ai-cmd").disabled = $("btn-ai-apply").disabled = locked || !state.aiReady;
+  $("btn-ai").disabled = locked;
+}
+
 async function switchTo(id, { force = false } = {}) {
   if (id === state.currentId && !force) return;
   if (!force && !(await confirmDiscard())) return;
@@ -164,6 +179,7 @@ async function switchTo(id, { force = false } = {}) {
   const level = await api(`/api/levels/${id}`);
   state.currentId = level.id;
   setMeta(level);
+  applyLock(level.locked);
   Designer.setTree(level.tree);
   Designer.fitZoom();
   markDirty(false);
@@ -180,6 +196,7 @@ function neighbour(delta) {
 /* ============================ saving ============================ */
 
 async function save() {
+  if (state.locked) { toast("Approved levels are read-only — duplicate it to change it.", "error"); return false; }
   const body = { ...meta(), tree: Designer.getTree() };
   try {
     if (state.currentId === null) {
@@ -204,6 +221,7 @@ async function newLevel() {
   if (!(await confirmDiscard())) return;
   const highest = state.levels.reduce((a, l) => Math.max(a, l.number), 0);
   state.currentId = null;
+  applyLock(false);
   setMeta({ number: highest + 1, name: "", moves: 30, coins: 100, status: "draft" });
   Designer.setTree(Designer.emptyTree());
   Designer.fitZoom();
@@ -606,7 +624,7 @@ Object.entries(PANES).forEach(([key, { pane, rail, btn }]) => {
 
 /* ============================ wiring ============================ */
 
-Designer.onChange(() => markDirty(true));
+Designer.onChange(() => { if (!state.locked) markDirty(true); });
 
 ["in-level", "in-name", "in-moves", "in-coins", "in-status"].forEach(id => {
   $(id).addEventListener("input", () => { Designer.renderPreview(); markDirty(true); });
@@ -771,6 +789,8 @@ window.addEventListener("beforeunload", e => {
   else newLevel();
 
   api("/api/ai/status").then(({ configured, model }) => {
+    state.aiReady = configured;
+    applyLock(state.locked);
     if (!configured) {
       $("btn-ai").title = "Set OPENAI_API_KEY on the server to enable AI generation";
       $("btn-ai").style.opacity = $("btn-batch").style.opacity = ".55";

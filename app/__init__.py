@@ -41,6 +41,7 @@ def create_app(config_object=Config):
 
     with app.app_context():
         db.create_all()
+        _add_missing_columns(app)
         _bootstrap_admin(app)
 
     return app
@@ -77,6 +78,26 @@ def _log_database(app):
         )
     else:
         app.logger.info("Database: sqlite at %s (on the volume, persists)", path)
+
+
+def _add_missing_columns(app):
+    """create_all() never alters an existing table. Until Alembic is in, purely
+    additive columns are added here; anything else needs a real migration."""
+    from sqlalchemy import inspect, text
+
+    wanted = {"levels": {"locked": "BOOLEAN NOT NULL DEFAULT FALSE"}}
+    inspector = inspect(db.engine)
+    for table, columns in wanted.items():
+        have = {c["name"] for c in inspector.get_columns(table)}
+        for name, ddl in columns.items():
+            if name in have:
+                continue
+            try:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                app.logger.warning("Added column %s.%s", table, name)
+            except Exception as err:   # another worker added it first
+                app.logger.info("Column %s.%s not added: %s", table, name, err)
 
 
 def _bootstrap_admin(app):

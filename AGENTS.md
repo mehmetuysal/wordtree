@@ -57,12 +57,22 @@ role checks.
   means `ai.DEFAULT_MODEL`. `tests/smoke_test.py` blanks the OpenAI/admin variables
   so a local `.env` can't leak into it.
 - The approved levels live in `data/approved_levels.xlsx` (one tab per level,
-  column = depth). `FLASK_APP=run.py ./venv/bin/flask import-xlsx data/approved_levels.xlsx`
-  imports them as published levels; `--dry-run` prints the per-tab problem report,
-  `--mode overwrite` replaces existing numbers. Parsing is `services/xlsx_levels.py`
-  (stdlib only, no openpyxl) and reports irregularities instead of fixing them
-  silently. Tabs without a level number are matched by name, so reruns are no-ops.
-  Run `tests/xlsx_import_test.py` after touching the parser or the command.
+  column = depth) and are synced into the database as **locked** levels
+  (`Level.locked`): published, read-only. The API refuses to update, delete or
+  import-overwrite them (403 / import error); Duplicate makes an editable copy.
+  The UI greys them out (`applyLock()` in `app.js`), but the server is the guard.
+  `flask --app run import-xlsx data/approved_levels.xlsx` is the only way to
+  change them and runs before gunicorn on every deploy (`railpack.json`, `--quiet`):
+  changed tabs are updated, unchanged ones skipped. An editable level on an
+  approved number is kept and reported (`KEEP`) unless `--mode overwrite`; one
+  with exactly the approved tree is adopted. `--dry-run` prints the per-tab problem
+  report. Parsing is `services/xlsx_levels.py` (stdlib only) and reports sheet
+  irregularities instead of fixing them silently. Tabs without a level number are
+  matched by name. Run `tests/xlsx_import_test.py` after touching the parser or
+  the command.
+- `_add_missing_columns()` (`app/__init__.py`) adds purely additive columns that
+  `create_all()` can't (it never alters existing tables). Anything beyond that
+  needs Alembic.
 - The house style comes from those levels, not from a fixed shape: uneven
   branches, mixed link types (kind of, part, symbol, scene, partner), concrete
   leaves under abstract themes, short phrases where natural (ICE CREAM), proper

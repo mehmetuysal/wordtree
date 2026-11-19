@@ -58,60 +58,81 @@ def register(app):
     @app.cli.command("import-xlsx")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))
     @click.option("--mode", type=click.Choice(["skip", "overwrite"]), default="skip",
-                  help="What to do when a level number already exists.")
-    @click.option("--status", type=click.Choice(["draft", "published"]), default="published")
+                  help="When an editable level holds an approved number: leave it (skip) "
+                       "or replace it with the approved one (overwrite).")
     @click.option("--dry-run", is_flag=True, help="Only print the report, write nothing.")
-    def import_xlsx(path, mode, status, dry_run):
-        """Import the approved-levels workbook (one tab per level)."""
+    @click.option("--quiet", is_flag=True, help="Only print conflicts and the totals (for deploys).")
+    def import_xlsx(path, mode, dry_run, quiet):
+        """Sync the approved-levels workbook into the database as locked levels.
+
+        Approved levels are read-only in the app; this command is the only way to
+        change them, so it is safe to run on every deploy: changed tabs are
+        updated, unchanged ones left alone.
+        """
         from .blueprints.levels import normalize_tree
         from .services.xlsx_levels import load_levels, stats
 
+        say = (lambda *_: None) if quiet else click.echo
         levels = load_levels(path)
         taken = {n for n in db.session.execute(db.select(Level.number)).scalars()}
         wanted = {lv["number"] for lv in levels if lv["number"] and not lv["skip"]}
         next_free = max(taken | wanted | {0}) + 1
-        claimed, created, updated, skipped = set(), [], [], []
+        claimed, counts = set(), {"created": 0, "updated": 0, "unchanged": 0, "skipped": 0}
 
         for lv in levels:
             label = f"{lv['tab']!r}" + (f" -> {lv['name']}" if lv["name"] != lv["tab"] else "")
             if lv["skip"]:
-                click.echo(f"SKIP  {label}: {lv['skip']}")
+                say(f"SKIP  {label}: {lv['skip']}")
                 continue
             number = lv["number"] if lv["number"] not in claimed else None
-            # tabs without a usable number are matched by name, so a rerun is a no-op
-            existing = db.session.execute(
-                db.select(Level).filter_by(number=number) if number else
-                db.select(Level).filter_by(name=lv["name"][:120]).limit(1)
-            ).scalar_one_or_none()
-            if not number:
+            tree = normalize_tree(lv["tree"])
+            if number:
+                existing = db.session.execute(db.select(Level).filter_by(number=number)).scalar_one_or_none()
+            else:
+                # tabs without a usable number are found again by name, so a rerun
+                # doesn't add them twice: an approved level, or an editable one that
+                # is an untouched copy of this tab (imported before locking existed)
+                same_name = db.session.execute(
+                    db.select(Level).filter_by(name=lv["name"][:120]).order_by(Level.locked.desc())
+                ).scalars().all()
+                existing = next((x for x in same_name if x.locked or x.tree == tree), None)
                 number = existing.number if existing else next_free
                 next_free += 0 if existing else 1
                 lv["issues"].append(f"no level number of its own — level {number}")
             claimed.add(number)
-            info = stats(lv["tree"])
             for issue in lv["issues"]:
-                click.echo(f"WARN  {label}: {issue}")
+                say(f"WARN  {label}: {issue}")
 
-            if existing and mode == "skip":
-                skipped.append(number)
+            # an editable level with exactly this tree is the approved one, imported
+            # before locking existed: adopt it. Only real edits are kept.
+            if existing and not existing.locked and existing.tree != tree and mode == "skip":
+                click.echo(f"KEEP  #{number} is an editable level ({existing.name!r}); "
+                           f"approved {lv['name']!r} not imported. Use --mode overwrite to replace it.")
+                counts["skipped"] += 1
                 continue
-            target = existing or Level(number=number)
-            target.name = lv["name"][:120]
-            target.status = status
-            target.tree = normalize_tree(lv["tree"])
-            if not existing:
-                target.moves, target.coins = 30, 100
-                db.session.add(target)
-            (updated if existing else created).append(number)
-            click.echo(f"{'UPD ' if existing else 'ADD '}  #{number} {lv['name']} "
-                       f"({info['words']} words, depth {info['depth']})")
+            if existing and existing.locked and existing.tree == tree and existing.name == lv["name"][:120]:
+                counts["unchanged"] += 1
+                continue
 
+            target = existing or Level(number=number, moves=30, coins=100)
+            target.name = lv["name"][:120]
+            target.status = "published"
+            target.locked = True
+            target.tree = tree
+            if not existing:
+                db.session.add(target)
+            counts["updated" if existing else "created"] += 1
+            info = stats(lv["tree"])
+            say(f"{'UPD ' if existing else 'ADD '}  #{number} {lv['name']} "
+                f"({info['words']} words, depth {info['depth']})")
+
+        totals = ", ".join(f"{k} {v}" for k, v in counts.items())
         if dry_run:
             db.session.rollback()
-            click.echo(f"dry run: would create {len(created)}, update {len(updated)}, skip {len(skipped)}")
+            click.echo(f"dry run, would be: {totals}")
             return
         db.session.commit()
-        click.echo(f"created {len(created)}, updated {len(updated)}, skipped {len(skipped)} existing")
+        click.echo(f"approved levels: {totals}")
 
     @app.cli.command("reset-password")
     @click.argument("username")

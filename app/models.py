@@ -66,6 +66,9 @@ class Level(db.Model):
     coins = db.Column(db.Integer, nullable=False, default=100)
     status = db.Column(db.String(16), nullable=False, default="draft")  # draft|published
     tree_json = db.Column(db.Text, nullable=False, default="{}")
+    # approved levels imported from the workbook: read-only in the app, only
+    # `flask import-xlsx` changes them
+    locked = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
@@ -114,6 +117,7 @@ class Level(db.Model):
             "moves": self.moves,
             "coins": self.coins,
             "status": self.status,
+            "locked": bool(self.locked),
             "words": self.word_count(),
             "hidden": self.hidden_count(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
