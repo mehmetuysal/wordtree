@@ -70,13 +70,26 @@ role checks.
   it to every call — update the examples there when the style moves.
   `_clean_word()` keeps phrases (spaces, hyphens, apostrophes); don't go back to
   single-word clipping, it turned ICE CREAM into ICE.
-- `generate_tree` and `regenerate_branch` send every published level in the
+- The AI's references are the approved levels read from `APPROVED_LEVELS_PATH`
+  (default `data/approved_levels.xlsx`) by `ai.reference_levels()`, cached per
+  file mtime — not the database, so a server with no imported levels still
+  generates in the house style. To change the references, update the workbook.
+- `generate_tree` and `regenerate_branch` send every reference level in the
   system message (`_reference_system()`, ~48k tokens for 190 levels, kept as a
   stable prefix so OpenAI's prompt cache applies; `cached=` in the log shows it).
   Words may repeat across levels, branches may not: `_copied_branches()` flags a
   branch whose children are 3/4 the same as an approved branch of the same word
   (2+ shared, so LOCK > KEY pairs are fine), retries once, then returns `copied`
   for the UI to warn about. Suggest and tree edit stay on the short `SYSTEM_PROMPT`.
+- Level size comes from its number: `ai.size_for_level(n)` is the median word
+  count and depth of the 9 approved levels nearest to `n`. The AI modal prefills
+  from it and the batch uses it per level.
+- Batch generation (`✨ Batch` in the Levels pane) runs one
+  `POST /api/ai/generate-level {topic, number}` per topic, sequentially from the
+  browser: each request stays inside gunicorn's 120s timeout and numbers can't
+  race. Results are saved as drafts; `409` means the number is taken.
+  `POST /api/ai/suggest-topics` proposes themes that aren't in the references or
+  the database yet.
 - `generate_tree` takes a target word count and a max depth, not a breadth; the
   schema only bounds depth and `_cap_words()` trims breadth-first at
   `ai.MAX_GENERATED_WORDS`. The JS mirrors that cap as `MAX_GENERATED_WORDS`.

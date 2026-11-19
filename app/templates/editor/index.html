@@ -56,6 +56,7 @@
       <div class="flex items-center justify-between">
         <h2 class="font-display text-[15px]">Levels</h2>
         <div class="flex items-center gap-1.5">
+          <button class="btn ghost-btn text-[12px] px-3 py-1.5 rounded-lg" id="btn-batch" title="Generate several levels with AI">✨ Batch</button>
           <button class="btn primary text-[12px] px-3 py-1.5 rounded-lg" id="btn-new">+ New</button>
           <button class="collapse-btn" id="btn-collapse-levels" title="Hide levels (⌥1)" aria-label="Hide levels">‹</button>
         </div>
@@ -186,6 +187,34 @@
       <button class="btn ghost-btn" id="btn-import-cancel">Cancel</button>
       <button class="btn ghost-btn" id="btn-import-editor">Load into editor</button>
       <button class="btn primary" id="btn-import-save">Import to library</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------------------- batch generate ---------------------------- -->
+<div class="overlay hiddenel" id="ov-batch">
+  <div class="modal" style="width:min(520px,94vw)">
+    <h3>Generate levels in a batch</h3>
+    <div class="text-xs text-slate-500">
+      One topic per line. Each becomes a draft under the next free level number,
+      sized like the approved levels around that number.
+    </div>
+    <textarea id="batch-topics" placeholder="COFFEE SHOP&#10;SPACE TRAVEL&#10;GRANDPARENTS"></textarea>
+    <div class="field-row">
+      <label>Suggest
+        <input id="batch-count" type="number" min="1" max="30" value="10">
+      </label>
+      <button class="btn ghost-btn" id="btn-batch-suggest" title="Add topics the approved levels don't cover yet">Suggest topics</button>
+      <label class="ml-auto" title="Numbers that are already taken are skipped. The size follows the approved levels around each number.">First level number
+        <input id="batch-start" type="number" min="1" value="1">
+      </label>
+    </div>
+    <div class="text-xs text-slate-500" id="batch-size"></div>
+    <ol class="text-sm space-y-1 max-h-56 overflow-auto" id="batch-progress"></ol>
+    <div class="warn" id="batch-err"></div>
+    <div class="modal-btns">
+      <button class="btn ghost-btn" id="btn-batch-close">Close</button>
+      <button class="btn primary" id="btn-batch-run">Generate</button>
     </div>
   </div>
 </div>

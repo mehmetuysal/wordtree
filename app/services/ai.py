@@ -6,8 +6,10 @@ functions raise AIUnavailable and the UI degrades gracefully.
 """
 
 import json
+import os
 import re
 import time
+from statistics import median
 
 from flask import current_app
 
@@ -130,7 +132,7 @@ UNIQUE_RULE = (
 )
 
 # Reusing a word from the approved levels is fine; reproducing one of their
-# branches is not. generate_tree and regenerate_branch send every published
+# branches is not. generate_tree and regenerate_branch send every approved
 # level along and _copied_branches() checks the answer against them.
 COPY_RULE = (
     "Words from the approved levels may be reused, but never reproduce one of their "
@@ -213,14 +215,52 @@ def _blank_duplicates(node, taken):
     return rejected
 
 
-def _published_levels():
-    from ..extensions import db
-    from ..models import Level
+_references = {"key": None, "levels": []}
 
-    rows = db.session.execute(
-        db.select(Level).filter_by(status="published").order_by(Level.number)
-    ).scalars()
-    return [(lv.number, lv.name, lv.tree) for lv in rows if (lv.tree or {}).get("word")]
+
+def reference_levels():
+    """[(number, name, tree)] from the approved-levels workbook, parsed once per
+    file version. Tabs without a number continue after the highest one, the same
+    way `flask import-xlsx` numbers them."""
+    from .xlsx_levels import load_levels
+
+    path = current_app.config.get("APPROVED_LEVELS_PATH") or ""
+    if not os.path.isfile(path):
+        current_app.logger.warning("ai references: %s not found, generating without them", path)
+        return []
+    key = (path, os.path.getmtime(path))
+    if _references["key"] != key:
+        parsed = [lv for lv in load_levels(path) if lv["tree"] and not lv["skip"]]
+        claimed, out = set(), []
+        next_free = max((lv["number"] or 0 for lv in parsed), default=0) + 1
+        for lv in parsed:
+            number = lv["number"] if lv["number"] not in claimed else None
+            if not number:
+                number, next_free = next_free, next_free + 1
+            claimed.add(number)
+            out.append((number, lv["name"], lv["tree"]))
+        _references.update(key=key, levels=sorted(out, key=lambda r: r[0]))
+    return _references["levels"]
+
+
+def size_for_level(number):
+    """(words, depth) for a level number: the median of the 9 approved levels
+    closest to it, so the difficulty curve carries on past the last one."""
+    levels = reference_levels()
+    if not levels:
+        return 40, 4
+    nearest = sorted(levels, key=lambda r: abs(r[0] - number))[:9]
+    sizes = []
+    for _, _, tree in nearest:
+        stack, count, depth = [(tree, 1)], 0, 0
+        while stack:
+            node, d = stack.pop()
+            count, depth = count + 1, max(depth, d)
+            stack += [(c, d + 1) for c in node.get("children") or []]
+        sizes.append((count, depth))
+    words = int(median(s[0] for s in sizes))
+    depth = int(median(s[1] for s in sizes))
+    return max(5, min(MAX_GENERATED_WORDS, words)), max(2, min(MAX_DEPTH, depth))
 
 
 def _outline_words(node, depth=0, out=None):
@@ -407,7 +447,7 @@ def generate_tree(topic, *, words=40, depth=4, hide_from_depth=1, model=None):
         "Each child must belong to its own parent and must not fit its parent's siblings "
         "or any word higher up the tree. " + UNIQUE_RULE + " " + COPY_RULE
     )
-    levels = _published_levels()
+    levels = reference_levels()
     system, index = _reference_system(levels), _branch_index(levels)
 
     def attempt(extra_banned=(), copied=()):
@@ -502,7 +542,7 @@ def regenerate_branch(word, shape, *, path=None, avoid=None, keep_word=False, to
     lines.append("Every child must belong to its own parent, in the ways the approved levels show.")
     lines.append(UNIQUE_RULE)
     lines.append(COPY_RULE)
-    levels = _published_levels()
+    levels = reference_levels()
     system, index = _reference_system(levels), _branch_index(levels)
 
     def attempt(extra_banned=(), copied=()):
@@ -651,3 +691,37 @@ def suggest_children(word, *, path=None, count=4, avoid=None, model=None):
     if len(words) < count:   # duplicates were dropped — ask once more for the rest
         words += attempt(count - len(words), banned | set(words))[: count - len(words)]
     return words[:count]
+
+
+def suggest_topics(count, *, avoid=()):
+    """New level themes that none of the approved levels or `avoid` cover yet."""
+    schema = {
+        "type": "object",
+        "properties": {"topics": {"type": "array", "items": {"type": "string"}}},
+        "required": ["topics"],
+        "additionalProperties": False,
+    }
+    taken = {a.strip().upper() for a in avoid if a}
+    for _, name, tree in reference_levels():
+        taken |= {re.sub(r"\s*\(.*\)$", "", name).upper(), tree["word"]}
+
+    def attempt(n, blocked):
+        prompt = (
+            f"Suggest {n} themes for new Word Tree levels. A theme is one to three words, "
+            "broad enough for 30-60 associated words in several distinct branches, and "
+            "something every adult player recognises (like the existing ones: FOOD, LUCK, "
+            "HOTEL, FAIRY TALES, ANCIENT GREECE, SECRETS). Mix concrete places and things "
+            "with abstract ideas. Do not suggest any theme that already exists or is "
+            "a near-synonym or a plural/singular of one: " + ", ".join(sorted(blocked)) + "."
+        )
+        out = []
+        for raw in _complete(prompt, schema, "level_topics").get("topics", []):
+            topic = _clean_word(raw)
+            if topic and topic not in blocked and topic not in out:
+                out.append(topic)
+        return out
+
+    topics = attempt(count, taken)
+    if len(topics) < count:
+        topics += attempt(count - len(topics), taken | set(topics))[: count - len(topics)]
+    return topics[:count]

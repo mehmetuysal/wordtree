@@ -1,7 +1,10 @@
 from flask import Blueprint, jsonify, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 
+from ..extensions import db
+from ..models import Level
 from ..services import ai
+from .levels import next_level_number, normalize_tree
 
 bp = Blueprint("ai", __name__, url_prefix="/api/ai")
 
@@ -64,6 +67,64 @@ def generate_tree():
         model=data.get("model"),
     )
     return jsonify(tree=tree, copied=copied)
+
+
+@bp.get("/level-size")
+@login_required
+def level_size():
+    """The word count and depth the approved levels use around this number."""
+    words, depth = ai.size_for_level(max(1, request.args.get("number", type=int) or 1))
+    return jsonify(words=words, depth=depth, next_free=next_level_number())
+
+
+@bp.post("/suggest-topics")
+@login_required
+def suggest_topics():
+    data = request.get_json(silent=True) or {}
+    count = min(30, max(1, int(data.get("count") or 10)))
+    names = db.session.execute(db.select(Level.name)).scalars().all()
+    avoid = [*names, *(data.get("avoid") or [])]
+    return jsonify(topics=ai.suggest_topics(count, avoid=avoid))
+
+
+@bp.post("/generate-level")
+@login_required
+def generate_level():
+    """Generate one level and save it as a draft.
+
+    `number` is where the level goes and what it's sized for — the approved
+    levels aren't in every database, so the batch says which number it's at.
+    Without one it takes the next free number. The batch runs one request per
+    topic from the browser, so no request outlives the gunicorn timeout.
+    """
+    data = request.get_json(silent=True) or {}
+    topic = (data.get("topic") or "").strip()
+    if not topic:
+        return jsonify(error="A topic is required."), 400
+    number = int(data.get("number") or 0) or next_level_number()
+    if number < 1:
+        return jsonify(error="Level number must be >= 1."), 400
+
+    def taken():
+        return db.session.execute(db.select(Level.id).filter_by(number=number)).first()
+
+    if taken():
+        return jsonify(error=f"Level {number} already exists."), 409
+    words, depth = ai.size_for_level(number)
+    tree, copied = ai.generate_tree(topic, words=words, depth=depth)
+    if taken():   # someone saved that number while the AI was busy
+        return jsonify(error=f"Level {number} was taken while generating."), 409
+    level = Level(
+        number=number,
+        name=topic.title()[:120],
+        status="draft",
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id,
+    )
+    level.tree = normalize_tree(tree)
+    db.session.add(level)
+    db.session.commit()
+    return jsonify(level=level.to_summary(), copied=copied), 201
 
 
 @bp.post("/regenerate-branch")

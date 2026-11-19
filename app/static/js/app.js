@@ -454,6 +454,100 @@ async function runGenerate() {
   }
 }
 
+/* ============================ batch generate ============================ */
+
+const batch = { running: false, stop: false };
+
+function batchTopics() {
+  const seen = new Set();
+  return $("batch-topics").value.split("\n").map(t => t.trim().toUpperCase())
+    .filter(t => t && !seen.has(t) && seen.add(t));
+}
+
+async function updateBatchSize() {
+  const start = +$("batch-start").value || 1;
+  try {
+    const { words, depth } = await api(`/api/ai/level-size?number=${start}`);
+    $("batch-size").textContent = `Level ${start} → about ${words} words, ${depth} levels deep (from the approved levels around it).`;
+  } catch { $("batch-size").textContent = ""; }
+}
+
+function updateBatchButton() {
+  const n = batchTopics().length;
+  $("btn-batch-run").textContent = batch.running ? "Stop" : n ? `Generate ${n} level${n > 1 ? "s" : ""}` : "Generate";
+  $("btn-batch-run").disabled = !batch.running && !n;
+}
+
+async function suggestBatchTopics() {
+  const btn = $("btn-batch-suggest");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">◠</span> Thinking…';
+  $("batch-err").textContent = "";
+  try {
+    const { topics } = await api("/api/ai/suggest-topics", {
+      method: "POST",
+      body: JSON.stringify({ count: +$("batch-count").value || 10, avoid: batchTopics() }),
+    });
+    const box = $("batch-topics");
+    box.value = [...batchTopics(), ...topics].join("\n");
+    updateBatchButton();
+  } catch (err) {
+    $("batch-err").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Suggest topics";
+  }
+}
+
+// one request per topic, one at a time: each stays well inside the server
+// timeout and claims the next level number only once the previous one is saved
+async function runBatch() {
+  if (batch.running) { batch.stop = true; $("btn-batch-run").textContent = "Stopping…"; return; }
+  const topics = batchTopics();
+  const list = $("batch-progress");
+  list.innerHTML = "";
+  const rows = topics.map(topic => {
+    const li = document.createElement("li");
+    li.textContent = `${topic} — waiting`;
+    li.className = "text-slate-500";
+    list.appendChild(li);
+    return li;
+  });
+  batch.running = true;
+  batch.stop = false;
+  $("batch-topics").disabled = $("btn-batch-suggest").disabled = $("batch-start").disabled = true;
+  updateBatchButton();
+
+  let made = 0, number = +$("batch-start").value || 1;
+  const taken = new Set(state.levels.map(l => l.number));
+  for (const [i, topic] of topics.entries()) {
+    if (batch.stop) { rows[i].textContent = `${topic} — skipped`; continue; }
+    while (taken.has(number)) number++;
+    taken.add(number);
+    rows[i].className = "";
+    rows[i].innerHTML = `<span class="spin">◠</span> ${topic} — generating level ${number}…`;
+    try {
+      const { level, copied } = await api("/api/ai/generate-level", {
+        method: "POST", body: JSON.stringify({ topic, number }),
+      });
+      made++;
+      rows[i].textContent = `${topic} — level ${level.number}, ${level.words} words`
+        + (copied.length ? ` · copies an approved branch: ${copied.join("; ")}` : "");
+      rows[i].className = copied.length ? "text-amber-700" : "text-emerald-700";
+      await refreshList();
+    } catch (err) {
+      rows[i].textContent = `${topic} — failed: ${err.message}`;
+      rows[i].className = "text-red-600";
+    }
+  }
+
+  batch.running = false;
+  $("batch-start").value = number + 1;
+  $("batch-topics").disabled = $("btn-batch-suggest").disabled = $("batch-start").disabled = false;
+  updateBatchButton();
+  toast(`Batch done: ${made} of ${topics.length} levels saved as drafts.`, made ? "success" : "error");
+}
+
 Designer.onSuggest(async (node, path, avoid) => {
   const word = (node.word || "").trim();
   if (!word) { toast("Give the node a word before asking for suggestions.", "error"); return []; }
@@ -573,12 +667,31 @@ $("btn-import-cancel").onclick = () => $("ov-import").classList.add("hiddenel");
 $("btn-import-save").onclick = importToLibrary;
 $("btn-import-editor").onclick = importIntoEditor;
 
-$("btn-ai").onclick = () => {
+$("btn-ai").onclick = async () => {
   $("ai-err").textContent = "";
   $("ov-ai").classList.remove("hiddenel");
-  updateGenerateSize();
   $("ai-topic").focus();
+  try {   // start from the size the approved levels use around this number
+    const { words, depth } = await api(`/api/ai/level-size?number=${meta().number}`);
+    $("ai-words").value = words;
+    $("ai-depth").value = depth;
+  } catch { /* keep whatever is in the fields */ }
+  updateGenerateSize();
 };
+
+$("btn-batch").onclick = () => {
+  $("batch-err").textContent = "";
+  $("ov-batch").classList.remove("hiddenel");
+  if (!batch.running) $("batch-start").value = Math.max(0, ...state.levels.map(l => l.number)) + 1;
+  updateBatchButton();
+  updateBatchSize();
+  $("batch-topics").focus();
+};
+$("batch-start").addEventListener("change", updateBatchSize);
+$("batch-topics").addEventListener("input", updateBatchButton);
+$("btn-batch-suggest").onclick = suggestBatchTopics;
+$("btn-batch-run").onclick = runBatch;
+$("btn-batch-close").onclick = () => $("ov-batch").classList.add("hiddenel");
 ["ai-words", "ai-depth"].forEach((id) => $(id).addEventListener("input", updateGenerateSize));
 $("btn-ai-cancel").onclick = () => $("ov-ai").classList.add("hiddenel");
 $("btn-ai-run").onclick = runGenerate;
@@ -619,7 +732,7 @@ $("mi-delete").onclick = async () => {
   toast("Level deleted.", "success");
 };
 
-[$("ov-export"), $("ov-import"), $("ov-ai")].forEach(ov =>
+[$("ov-export"), $("ov-import"), $("ov-ai"), $("ov-batch")].forEach(ov =>
   ov.addEventListener("click", e => { if (e.target === ov) ov.classList.add("hiddenel"); }));
 
 document.addEventListener("keydown", e => {
@@ -660,7 +773,9 @@ window.addEventListener("beforeunload", e => {
   api("/api/ai/status").then(({ configured, model }) => {
     if (!configured) {
       $("btn-ai").title = "Set OPENAI_API_KEY on the server to enable AI generation";
-      $("btn-ai").style.opacity = ".55";
+      $("btn-ai").style.opacity = $("btn-batch").style.opacity = ".55";
+      $("btn-batch").disabled = true;
+      $("btn-batch").title = "Set OPENAI_API_KEY on the server to enable AI generation";
       $("ai-cmd").placeholder = "Set OPENAI_API_KEY on the server to use AI editing";
       $("ai-cmd").disabled = $("btn-ai-apply").disabled = true;
       return;

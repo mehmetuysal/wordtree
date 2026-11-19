@@ -99,6 +99,14 @@ assert len(c.get("/api/levels").get_json()["levels"]) == 4
 assert c.get("/api/ai/status").get_json() == {"configured": False, "model": ""}
 r = c.post("/api/ai/generate-tree", json={"topic": "fruit"})
 assert r.status_code == 503, (r.status_code, r.get_json())
+# batch: sizing works without a key (it reads data/approved_levels.xlsx),
+# generating doesn't
+size = c.get("/api/ai/level-size?number=1").get_json()
+assert size["words"] < c.get("/api/ai/level-size?number=150").get_json()["words"], size
+assert c.post("/api/ai/generate-level", json={}).status_code == 400
+assert c.post("/api/ai/generate-level", json={"topic": "coffee"}).status_code == 503
+assert c.post("/api/ai/generate-level", json={"topic": "coffee", "number": 2}).status_code == 409, "taken"
+assert c.post("/api/ai/suggest-topics", json={"count": 3}).status_code == 503
 # tree edits are validated before the key is even needed
 assert c.post("/api/ai/edit-tree", json={"tree": {"word": "A"}}).status_code == 400
 assert c.post("/api/ai/edit-tree", json={"instruction": "go"}).status_code == 400

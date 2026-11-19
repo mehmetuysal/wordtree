@@ -106,10 +106,12 @@ with app.app_context():
     assert rows[1].name == "Food" and rows[1].status == "published"
     assert rows[7].name == "Force" and {lv.name for lv in rows.values()} >= {"Force (2)", "Pairs (A)", "Pairs (B)"}
 
-# ---- approved levels become the AI's references; copying a branch is caught
+# ---- the workbook is the AI's reference, wherever the database is
+app.config["APPROVED_LEVELS_PATH"] = xlsx
 with app.app_context():
-    refs = ai._published_levels()
-    assert len(refs) == 6, refs
+    refs = ai.reference_levels()
+    assert [r[0] for r in refs] == [1, 2, 7, 8, 9, 10], [r[:2] for r in refs]
+    assert ai.size_for_level(1)[0] >= 5
     system = ai._reference_system(refs)
     assert system.startswith(ai.SYSTEM_PROMPT) and "# Level 1\nFOOD\n  FRUIT\n    APPLE" in system
     index = ai._branch_index(refs)

@@ -54,3 +54,7 @@ class Config:
     # GPT-5 models only: "none" | "low" | "medium" | "high". Anything above low
     # makes the flagship spend minutes thinking about a one-word edit.
     OPENAI_REASONING_EFFORT = os.environ.get("OPENAI_REASONING_EFFORT", "low")
+    # the approved levels the AI copies the style of; read straight from the repo
+    # so a server with an empty database still generates in the house style
+    APPROVED_LEVELS_PATH = os.environ.get(
+        "APPROVED_LEVELS_PATH", str(BASE_DIR / "data" / "approved_levels.xlsx"))
