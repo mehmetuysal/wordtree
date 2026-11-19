@@ -11,11 +11,111 @@ import time
 
 from flask import current_app
 
+# Trimmed from the approved levels in data/approved_levels.xlsx. They show the
+# house style better than any rule: uneven branches, mixed link types, concrete
+# leaves under abstract themes, and short phrases where that's the natural name.
+STYLE_EXAMPLES = """\
+STORES
+  PHARMACY
+    MEDICINE
+    BANDAGE
+    VITAMIN
+  FURNITURE STORE
+    SOFA
+    CLOSET
+  BOOKSTORE
+    MAGAZINE
+    NOVEL
+    COMIC
+
+LUCK
+  GOOD LUCK
+    FOUR-LEAF CLOVER
+    HORSESHOE
+    LUCKY NUMBER
+      SEVEN
+  BAD LUCK
+    BLACK CAT
+    BROKEN MIRROR
+    FRIDAY THE 13TH
+  CHANCE GAMES
+    LOTTERY
+      TICKET
+      DRAW
+    DICE
+      ROLL
+        SNAKE EYES
+    COIN FLIP
+      HEADS
+      TAILS
+
+EMOTIONS
+  SADNESS
+    CRYING
+      TEARS
+        TISSUE
+    FUNERAL
+      CASKET
+      HEARSE
+  FEAR
+    NIGHTMARE
+    SPIDER
+    HAUNTED HOUSE
+  SURPRISE
+    RAISED EYEBROWS
+    PLOT TWIST
+
+PAIRS
+  OPPOSITES
+    HOT
+      COLD
+    DAY
+      NIGHT
+  MATCHING OBJECTS
+    LOCK
+      KEY
+    NEEDLE
+      THREAD
+  PEOPLE
+    BRIDE
+      GROOM
+    DOCTOR
+      PATIENT
+
+FLOW
+  WATER
+    RIVERS
+      AMAZON
+      NILE
+  TRAFFIC
+    CONGESTION
+      GRIDLOCK
+    TUNNEL
+  CASH
+    INCOME
+      SALARY
+    BILLS"""
+
 SYSTEM_PROMPT = (
     "You design levels for a word association puzzle game called Word Tree. "
-    "A level is a tree: the root is a broad category and every child is a more "
-    "specific member or part of its parent. Words are single English words in "
-    "UPPERCASE, no spaces, no punctuation. Keep them common and unambiguous."
+    "A level is a tree. The root is the level's theme; its children are the main "
+    "branches of that theme, and every word below them belongs to its own parent. "
+    "A child can be a kind of its parent (FRUIT > APPLE), an example or a part "
+    "(BOOKSTORE > NOVEL, DICE > ROLL), the thing it's famous for or a symbol of it "
+    "(BAD LUCK > BLACK CAT), what you see at that scene (FUNERAL > HEARSE), or its "
+    "natural partner (LOCK > KEY, HOT > COLD). Abstract themes and branches always "
+    "come down to concrete, picturable words at the leaves. "
+    "Branches are uneven on purpose: some words have one child, some five or six, "
+    "and many have none — leaves sit at different depths. "
+    "Words are UPPERCASE English. Prefer a single word, but use a short phrase of "
+    "two or three words when that is the thing's natural name (ICE CREAM, "
+    "FOUR-LEAF CLOVER, HAUNTED HOUSE); never glue words together. A child must not "
+    "repeat its parent's word (not RUNWAY > RUNWAY LIGHTS) — that gives the answer "
+    "away. Proper nouns — "
+    "places, famous people, characters, well-known brands — are fine when the "
+    "theme calls for them. Everything must be something a casual adult player "
+    "recognises instantly: no jargon, abbreviations or codes.\n\n"
+    "Approved levels, for style:\n" + STYLE_EXAMPLES
 )
 
 # The player has to place hidden words back into the tree, so a word that would
@@ -29,7 +129,22 @@ UNIQUE_RULE = (
     "or two branches, choose a different, more specific word."
 )
 
+# Reusing a word from the approved levels is fine; reproducing one of their
+# branches is not. generate_tree and regenerate_branch send every published
+# level along and _copied_branches() checks the answer against them.
+COPY_RULE = (
+    "Words from the approved levels may be reused, but never reproduce one of their "
+    "branches: when a word appears there with children, give it a clearly different "
+    "set of children here (COFFEE can come back, COFFEE > ESPRESSO, LATTE, MOCHA cannot)."
+)
+# ~35k tokens for the first 190 levels. Past this budget only the newest-numbered
+# levels are dropped from the prompt; the copy check still sees all of them.
+REFERENCE_CHAR_BUDGET = 400_000
+
 MAX_DEPTH = 6
+# Past this the tree doesn't fit on screen and the model can't keep that many
+# words unambiguous. Approved levels run 15 words early on, 50-60 later.
+MAX_GENERATED_WORDS = 80
 
 # One model for everything, no picker. Luna is the cheap tier of the current
 # generation: $0.20 / $1.20 per 1M tokens, roughly $0.0006 per tree edit, and it
@@ -59,7 +174,7 @@ def _pick_model(requested):
 
 
 def _tree_schema(depth):
-    """A strict json_schema for a tree exactly `depth` levels deep."""
+    """A strict json_schema for a tree at most `depth` levels deep."""
     schema = {
         "type": "object",
         "properties": {"word": {"type": "string"}},
@@ -73,9 +188,10 @@ def _tree_schema(depth):
 
 
 def _clean_word(word):
-    """One plain uppercase word — models occasionally answer LIGHT_TRUCK."""
-    parts = re.findall(r"[A-Za-z]+", word or "")
-    return parts[0].upper() if parts else ""
+    """An uppercase word or short phrase: LIGHT_TRUCK -> LIGHT TRUCK, stray marks dropped."""
+    word = re.sub(r"[_\s]+", " ", word or "")
+    word = re.sub(r"[^A-Za-z0-9 '&\-]", "", word)
+    return re.sub(r"\s+", " ", word).strip(" -'").upper()
 
 
 def _blank_duplicates(node, taken):
@@ -95,6 +211,78 @@ def _blank_duplicates(node, taken):
     for child in node.get("children") or []:
         rejected += _blank_duplicates(child, taken)
     return rejected
+
+
+def _published_levels():
+    from ..extensions import db
+    from ..models import Level
+
+    rows = db.session.execute(
+        db.select(Level).filter_by(status="published").order_by(Level.number)
+    ).scalars()
+    return [(lv.number, lv.name, lv.tree) for lv in rows if (lv.tree or {}).get("word")]
+
+
+def _outline_words(node, depth=0, out=None):
+    out = [] if out is None else out
+    out.append("  " * depth + (node.get("word") or "").strip().upper())
+    for child in node.get("children") or []:
+        _outline_words(child, depth + 1, out)
+    return out
+
+
+def _reference_system(levels):
+    """SYSTEM_PROMPT plus every approved level. The level text only changes when
+    a level is published or edited, so OpenAI's prompt cache keeps it cheap."""
+    if not levels:
+        return SYSTEM_PROMPT
+    blocks, used = [], 0
+    for number, name, tree in levels:
+        block = f"# Level {number}\n" + "\n".join(_outline_words(tree))
+        used += len(block)
+        if used > REFERENCE_CHAR_BUDGET:
+            current_app.logger.warning("ai references cut at level %s (char budget)", number)
+            break
+        blocks.append(block)
+    return (
+        SYSTEM_PROMPT + "\n\nThese are all the approved levels of the game. Match their "
+        "style, size and difficulty — the further a level is in the game, the bigger and "
+        "harder it is. " + COPY_RULE + "\n\n" + "\n\n".join(blocks)
+    )
+
+
+def _branch_index(levels):
+    """word -> [(level number, its children's words)] for every approved branch."""
+    index = {}
+    for number, _, tree in levels:
+        stack = [tree]
+        while stack:
+            node = stack.pop()
+            kids = node.get("children") or []
+            words = frozenset((k.get("word") or "").strip().upper() for k in kids) - {""}
+            if len(words) >= 2:
+                index.setdefault((node.get("word") or "").strip().upper(), []).append((number, words))
+            stack += kids
+    return index
+
+
+def _copied_branches(node, index):
+    """Branches whose children mostly repeat an approved branch of the same word.
+
+    Two shared children are the floor (LOCK > KEY is a pair, not a copy), and
+    three quarters of the smaller set have to match.
+    """
+    found = []
+    word = (node.get("word") or "").strip().upper()
+    kids = frozenset((k.get("word") or "").strip().upper() for k in node.get("children") or []) - {""}
+    for number, ref in index.get(word, ()) if len(kids) >= 2 else ():
+        shared = kids & ref
+        if len(shared) >= 2 and len(shared) >= 0.75 * min(len(kids), len(ref)):
+            found.append(f"{word} > {', '.join(sorted(shared))} (level {number})")
+            break
+    for child in node.get("children") or []:
+        found += _copied_branches(child, index)
+    return found
 
 
 class AIUnavailable(RuntimeError):
@@ -165,11 +353,13 @@ def _complete(user_prompt, schema, schema_name, *, model=None, system=SYSTEM_PRO
         raise AIFailed(f"{model_id}: {getattr(err, 'message', None) or err}")
 
     usage = getattr(resp, "usage", None)
+    details = getattr(usage, "prompt_tokens_details", None)
     current_app.logger.info(
-        "ai %s model=%s effort=%s %.1fs tokens=%s/%s",
+        "ai %s model=%s effort=%s %.1fs tokens=%s/%s cached=%s",
         schema_name, model_id, kwargs.get("reasoning_effort", "-"),
         time.perf_counter() - started,
         getattr(usage, "completion_tokens", "?"), getattr(usage, "total_tokens", "?"),
+        getattr(details, "cached_tokens", "?"),
     )
     return json.loads(resp.choices[0].message.content)
 
@@ -185,34 +375,60 @@ def _decorate(node, depth=0, hide_from_depth=1):
     }
 
 
-def generate_tree(topic, *, breadth=3, depth=3, hide_from_depth=1, model=None):
-    """Generate a full level tree for a topic."""
-    prompt = (
-        f"Build a word tree for the topic '{topic}'. "
-        f"The root word is the topic itself. Give the root {breadth} children, "
-        f"and give each of those {breadth} children of their own. "
-        f"The tree must be exactly {depth} levels deep. "
-        "Every slot must hold exactly one plain word — no underscores, hyphens or spaces. "
-        + UNIQUE_RULE
-    )
+def _cap_words(node, limit):
+    """Keep the first `limit` words in breadth-first order, so a runaway answer
+    loses leaves on the deepest level rather than whole branches."""
+    kept, queue = 1, [node]
+    while queue:
+        current = queue.pop(0)
+        kids = []
+        for child in current.get("children") or []:
+            if kept >= limit:
+                break
+            kids.append(child)
+            kept += 1
+        current["children"] = kids
+        queue += kids
+    return node
 
-    def attempt(extra_banned):
+
+def generate_tree(topic, *, words=40, depth=4, hide_from_depth=1, model=None):
+    """Generate a level tree for a topic, shaped like the approved levels."""
+    words = max(5, min(MAX_GENERATED_WORDS, words))
+    branches = "2 or 3" if words < 20 else "4 to 7"
+    prompt = (
+        f"Build a word tree for the topic '{topic}'. The root word is the topic itself. "
+        f"Aim for about {words} words in total, counting the root, and never more than "
+        f"{MAX_GENERATED_WORDS}. The tree is at most {depth} levels deep (the root is level 1). "
+        f"Give the root {branches} branches that each look at the theme from a different "
+        "angle. Keep the branches uneven, the way the approved levels are: one word gets "
+        "five children, another one or none, and only some branches reach the deepest "
+        "level. A word without children has an empty children list. "
+        "Each child must belong to its own parent and must not fit its parent's siblings "
+        "or any word higher up the tree. " + UNIQUE_RULE + " " + COPY_RULE
+    )
+    levels = _published_levels()
+    system, index = _reference_system(levels), _branch_index(levels)
+
+    def attempt(extra_banned=(), copied=()):
         text = prompt
         if extra_banned:
             text += (
                 " Your previous answer reused these words; do not use any of them: "
                 + ", ".join(sorted(extra_banned)) + "."
             )
-        raw = _decorate(_complete(text, _tree_schema(depth), "word_tree", model=model),
-                        hide_from_depth=hide_from_depth)
-        return raw, _blank_duplicates(raw, set())
+        if copied:
+            text += " Your previous answer copied these approved branches; change them: " + "; ".join(copied) + "."
+        answer = _complete(text, _tree_schema(depth), "word_tree", model=model, system=system)
+        raw = _decorate(_cap_words(answer, MAX_GENERATED_WORDS), hide_from_depth=hide_from_depth)
+        return raw, _blank_duplicates(raw, set()), _copied_branches(raw, index)
 
-    tree, rejected = attempt(set())
-    if rejected:
-        retry, retry_rejected = attempt(set(rejected))
-        if len(retry_rejected) < len(rejected):
-            tree = retry
-    return tree
+    tree, rejected, copied = attempt()
+    if rejected or copied:
+        retry = attempt(set(rejected), copied)
+        if len(retry[1]) + len(retry[2]) < len(rejected) + len(copied):
+            tree, rejected, copied = retry
+    return tree, copied
 
 
 def _shape_depth(shape):
@@ -283,36 +499,42 @@ def regenerate_branch(word, shape, *, path=None, avoid=None, keep_word=False, to
         "The answer must match this outline exactly — one word per slot, "
         "no slot left empty, no extra nodes:\n" + _outline(shape, word if keep_word else "?") + "\n"
     )
-    lines.append("Every child must be a more specific member or part of its parent.")
+    lines.append("Every child must belong to its own parent, in the ways the approved levels show.")
     lines.append(UNIQUE_RULE)
-    lines.append("Each slot holds exactly one plain word — no underscores, hyphens or spaces.")
+    lines.append(COPY_RULE)
+    levels = _published_levels()
+    system, index = _reference_system(levels), _branch_index(levels)
 
-    def attempt(extra_banned):
+    def attempt(extra_banned=(), copied=()):
         prompt = list(lines)
-        blocked = sorted(banned | extra_banned)
+        blocked = sorted(banned | set(extra_banned))
         if blocked:
             prompt.append(
                 "These words are already used elsewhere in the level — none of them "
                 "may appear in your answer: " + ", ".join(blocked) + "."
             )
-        node = _fit_shape(
-            _complete(" ".join(prompt), _tree_schema(depth), "word_branch", model=model), shape)
+        if copied:
+            prompt.append("Your previous answer copied these approved branches; change them: "
+                          + "; ".join(copied) + ".")
+        node = _fit_shape(_complete(" ".join(prompt), _tree_schema(depth), "word_branch",
+                                    model=model, system=system), shape)
         taken = set(banned)
         if not keep_word:
-            return node, _blank_duplicates(node, taken)
+            return node, _blank_duplicates(node, taken), _copied_branches(node, index)
         node["word"] = word.upper()                  # the root word is off limits
         taken.add(node["word"])
         rejected = []
         for child in node.get("children") or []:
             rejected += _blank_duplicates(child, taken)
-        return node, rejected
+        return node, rejected, _copied_branches(node, index)
 
-    out, rejected = attempt(set())
-    if rejected:   # one retry with the clashes spelled out, then leave slots empty
-        retry, retry_rejected = attempt(set(rejected))
-        if len(retry_rejected) < len(rejected):
-            out = retry
-    return out
+    # one retry with the clashes spelled out, then leave slots empty
+    out, rejected, copied = attempt()
+    if rejected or copied:
+        retry = attempt(rejected, copied)
+        if len(retry[1]) + len(retry[2]) < len(rejected) + len(copied):
+            out, rejected, copied = retry
+    return out, copied
 
 
 EDIT_SYSTEM = (
@@ -387,7 +609,6 @@ def edit_tree(instruction, tree, *, model=None, topic=""):
         "Apply this instruction to it:", instruction.strip(),
         "Return the complete updated tree — every node, not just the part you changed.",
         f"The tree must be at most {MAX_DEPTH} levels deep.",
-        "Each word is one plain word: no underscores, hyphens or spaces.",
     ]
     raw = _complete(
         "\n".join(prompt), _edit_schema(MAX_DEPTH), "tree_edit",

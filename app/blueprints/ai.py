@@ -53,14 +53,17 @@ def generate_tree():
     if not topic:
         return jsonify(error="A topic is required."), 400
 
-    tree = ai.generate_tree(
+    words = int(data.get("words") or 40)
+    if not 5 <= words <= ai.MAX_GENERATED_WORDS:
+        return jsonify(error=f"Ask for 5 to {ai.MAX_GENERATED_WORDS} words."), 400
+    tree, copied = ai.generate_tree(
         topic,
-        breadth=min(6, max(2, int(data.get("breadth") or 3))),
-        depth=min(5, max(2, int(data.get("depth") or 3))),
+        words=words,
+        depth=min(ai.MAX_DEPTH, max(2, int(data.get("depth") or 4))),
         hide_from_depth=max(0, int(data.get("hideFromDepth") or 1)),
         model=data.get("model"),
     )
-    return jsonify(tree=tree)
+    return jsonify(tree=tree, copied=copied)
 
 
 @bp.post("/regenerate-branch")
@@ -77,7 +80,7 @@ def regenerate_branch():
     if not word and len(path) < 2 and not topic:
         return jsonify(error="Name the root word or the level first."), 400
 
-    node = ai.regenerate_branch(
+    node, copied = ai.regenerate_branch(
         word,
         shape,
         path=path,
@@ -86,7 +89,7 @@ def regenerate_branch():
         topic=topic,
         model=data.get("model"),
     )
-    return jsonify(node=node)
+    return jsonify(node=node, copied=copied)
 
 
 @bp.post("/suggest-children")

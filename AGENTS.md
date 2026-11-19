@@ -52,3 +52,31 @@ role checks.
 - `_bootstrap_admin()` (`app/__init__.py`) creates the first admin from
   `ADMIN_USERNAME`/`ADMIN_PASSWORD` and only when the users table is empty. Keep
   that guard — it's the difference between a bootstrap and a backdoor.
+- `app/config.py` loads `.env` itself, because `Config` reads the environment at
+  import time, before `create_app()` runs. `OPENAI_MODEL` defaults to empty, which
+  means `ai.DEFAULT_MODEL`. `tests/smoke_test.py` blanks the OpenAI/admin variables
+  so a local `.env` can't leak into it.
+- The approved levels live in `data/approved_levels.xlsx` (one tab per level,
+  column = depth). `FLASK_APP=run.py ./venv/bin/flask import-xlsx data/approved_levels.xlsx`
+  imports them as published levels; `--dry-run` prints the per-tab problem report,
+  `--mode overwrite` replaces existing numbers. Parsing is `services/xlsx_levels.py`
+  (stdlib only, no openpyxl) and reports irregularities instead of fixing them
+  silently. Tabs without a level number are matched by name, so reruns are no-ops.
+  Run `tests/xlsx_import_test.py` after touching the parser or the command.
+- The house style comes from those levels, not from a fixed shape: uneven
+  branches, mixed link types (kind of, part, symbol, scene, partner), concrete
+  leaves under abstract themes, short phrases where natural (ICE CREAM), proper
+  nouns allowed. `SYSTEM_PROMPT` and `STYLE_EXAMPLES` in `services/ai.py` carry
+  it to every call — update the examples there when the style moves.
+  `_clean_word()` keeps phrases (spaces, hyphens, apostrophes); don't go back to
+  single-word clipping, it turned ICE CREAM into ICE.
+- `generate_tree` and `regenerate_branch` send every published level in the
+  system message (`_reference_system()`, ~48k tokens for 190 levels, kept as a
+  stable prefix so OpenAI's prompt cache applies; `cached=` in the log shows it).
+  Words may repeat across levels, branches may not: `_copied_branches()` flags a
+  branch whose children are 3/4 the same as an approved branch of the same word
+  (2+ shared, so LOCK > KEY pairs are fine), retries once, then returns `copied`
+  for the UI to warn about. Suggest and tree edit stay on the short `SYSTEM_PROMPT`.
+- `generate_tree` takes a target word count and a max depth, not a breadth; the
+  schema only bounds depth and `_cap_words()` trims breadth-first at
+  `ai.MAX_GENERATED_WORDS`. The JS mirrors that cap as `MAX_GENERATED_WORDS`.

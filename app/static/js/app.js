@@ -407,6 +407,22 @@ async function runTreeEdit(event) {
   }
 }
 
+const MAX_GENERATED_WORDS = 80;
+
+// the server already retried once; what's left is for the designer to change
+function warnCopied(copied) {
+  if (copied && copied.length) toast("Same as an approved level, change it: " + copied.join("; "), "error");
+}
+
+function updateGenerateSize() {
+  const words = +$("ai-words").value || 0, bad = words < 5 || words > MAX_GENERATED_WORDS;
+  $("ai-size").textContent = bad
+    ? `Ask for 5 to ${MAX_GENERATED_WORDS} words`
+    : "Branches come out uneven, like the approved levels — the word count is a target, not exact.";
+  $("ai-size").classList.toggle("text-red-600", bad);
+  $("btn-ai-run").disabled = bad;
+}
+
 async function runGenerate() {
   const topic = $("ai-topic").value.trim();
   if (!topic) { $("ai-err").textContent = "Give it a topic first."; return; }
@@ -414,17 +430,18 @@ async function runGenerate() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spin">◠</span> Generating…';
   try {
-    const { tree } = await api("/api/ai/generate-tree", {
+    const { tree, copied } = await api("/api/ai/generate-tree", {
       method: "POST",
       body: JSON.stringify({
         topic,
-        breadth: +$("ai-breadth").value,
+        words: +$("ai-words").value,
         depth: +$("ai-depth").value,
         hideFromDepth: +$("ai-hide").value,
       }),
     });
     Designer.setTree(tree);
     Designer.fitZoom();
+    warnCopied(copied);
     if (!$("in-name").value.trim()) $("in-name").value = topic;
     markDirty(true);
     $("ov-ai").classList.add("hiddenel");
@@ -432,8 +449,8 @@ async function runGenerate() {
   } catch (err) {
     $("ai-err").textContent = err.message;
   } finally {
-    btn.disabled = false;
     btn.textContent = "Generate";
+    updateGenerateSize();
   }
 }
 
@@ -454,7 +471,7 @@ Designer.onSuggest(async (node, path, avoid) => {
 
 Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
   try {
-    const { node: fresh } = await api("/api/ai/regenerate-branch", {
+    const { node: fresh, copied } = await api("/api/ai/regenerate-branch", {
       method: "POST",
       // an unnamed node is filled in from its parent, or from the level name
       // when it is the root — no word needed to press ↻
@@ -463,6 +480,7 @@ Designer.onRegenerate(async (node, { keepWord, path, shape, avoid }) => {
         topic: meta().name || "",
       }),
     });
+    warnCopied(copied);
     return fresh;
   } catch (err) {
     toast(err.message, "error");
@@ -558,8 +576,10 @@ $("btn-import-editor").onclick = importIntoEditor;
 $("btn-ai").onclick = () => {
   $("ai-err").textContent = "";
   $("ov-ai").classList.remove("hiddenel");
+  updateGenerateSize();
   $("ai-topic").focus();
 };
+["ai-words", "ai-depth"].forEach((id) => $(id).addEventListener("input", updateGenerateSize));
 $("btn-ai-cancel").onclick = () => $("ov-ai").classList.add("hiddenel");
 $("btn-ai-run").onclick = runGenerate;
 

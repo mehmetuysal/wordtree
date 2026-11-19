@@ -200,16 +200,17 @@
       </label>
     </div>
     <div class="field-row">
-      <label>Children per node
-        <input id="ai-breadth" type="number" min="2" max="6" value="3">
+      <label title="Approved levels: about 15 early on, 50-60 later">Words
+        <input id="ai-words" type="number" min="5" max="80" value="40">
       </label>
-      <label>Depth
-        <input id="ai-depth" type="number" min="2" max="5" value="3">
+      <label title="Maximum levels including the root word">Max depth
+        <input id="ai-depth" type="number" min="2" max="6" value="4">
       </label>
-      <label>Hidden from depth
+      <label title="0 is the root: 1 hides everything below it">Hidden from depth
         <input id="ai-hide" type="number" min="0" max="5" value="1">
       </label>
     </div>
+    <div class="text-xs text-slate-500" id="ai-size"></div>
     <div class="warn" id="ai-err"></div>
     <div class="modal-btns">
       <button class="btn ghost-btn" id="btn-ai-cancel">Cancel</button>
