@@ -116,6 +116,7 @@ assert "created 0, updated 0, unchanged 5, skipped 1" in out.output, out.output
 assert "WARN" not in out.output, "--quiet is for deploy logs"
 out = runner.invoke(args=["import-xlsx", xlsx, "--mode", "overwrite"])
 assert "created 0, updated 1, unchanged 5, skipped 0" in out.output, out.output
+assert "REPLACE  #2 editable 'Mine' with approved 'Tip'; old tree: {\"word\": \"MINE\"" in out.output, out.output
 with app.app_context():
     rows = {lv.number: lv for lv in db.session.execute(db.select(Level)).scalars()}
     assert all(lv.locked for lv in rows.values()), "approved levels are locked"

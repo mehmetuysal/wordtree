@@ -1,3 +1,5 @@
+import json
+
 import click
 
 from .extensions import db
@@ -110,6 +112,10 @@ def register(app):
                            f"approved {lv['name']!r} not imported. Use --mode overwrite to replace it.")
                 counts["skipped"] += 1
                 continue
+            if existing and not existing.locked and existing.tree != tree:
+                # the deploy log is the only copy left of what gets replaced
+                click.echo(f"REPLACE  #{number} editable {existing.name!r} with approved {lv['name']!r}; "
+                           f"old tree: {json.dumps(existing.tree, ensure_ascii=False)}")
             if existing and existing.locked and existing.tree == tree and existing.name == lv["name"][:120]:
                 counts["unchanged"] += 1
                 continue
