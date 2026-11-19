@@ -7,6 +7,9 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ["SECRET_KEY"] = "test"
+# set explicitly so a developer's .env can't leak in (load_dotenv never overrides)
+for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "ADMIN_USERNAME", "ADMIN_PASSWORD"):
+    os.environ[name] = ""
 db_fd, db_path = tempfile.mkstemp(suffix=".db")
 os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
 

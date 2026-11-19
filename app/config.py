@@ -1,7 +1,13 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Config reads the environment when this module is imported, which is before
+# create_app() runs, so .env has to be loaded here.
+load_dotenv(BASE_DIR / ".env")
 
 
 def _database_url():
@@ -42,7 +48,8 @@ class Config:
 
     # OpenAI — used by app/services/ai.py
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    # empty means ai.DEFAULT_MODEL
+    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "")
     OPENAI_TIMEOUT = float(os.environ.get("OPENAI_TIMEOUT", 45))
     # GPT-5 models only: "none" | "low" | "medium" | "high". Anything above low
     # makes the flagship spend minutes thinking about a one-word edit.
